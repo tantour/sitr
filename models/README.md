@@ -1,0 +1,5 @@
+Packaged model binaries are downloaded or exported locally and are intentionally excluded from Git. `artifacts.json` pins the six shipped artifacts by SHA-256. The build refuses to package a different binary. The 640-pixel ONNX file and PyTorch weights are export/reference inputs and are not shipped in `dist`.
+
+The `fastface-large-128.onnx` artifact is FastFace Large 128, a MobileNetV3 face-attribute model. The extension uses only its two gender logits and ignores its age outputs. The model is released under Apache-2.0. `yunet-2026may.onnx` is OpenCV Zoo's tiny, MIT-licensed face detector; it provides the face boxes and nose landmarks used for person association.
+
+The three ONNX exports were made from Ultralytics 8.4.38 `yolo26n-seg.pt` with batch 1, static 256/320/416 inputs, FP32, opset 17, NMS disabled, and no simplifier. The observed outputs are `[1,300,38]` detections and `[1,32,S/4,S/4]` mask prototypes. A fresh export may hash differently across toolchains; validate its graph and update the manifest deliberately before building.

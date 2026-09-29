@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <style>
+    body{font:14px system-ui;width:340px;max-height:720px;overflow:auto;padding:14px;background:#111;color:#eee}
+    label{display:block;margin:10px 0}select,input,button{font:inherit}
+    input[type=number]{width:72px}input[type=range]{width:100%;accent-color:#b88aff}input[type=text]{box-sizing:border-box;width:100%}
+    button{padding:6px 10px}.muted{color:#aaa}.note{background:#242424;padding:9px;line-height:1.4}
+    h2{margin:0 0 4px}p{margin:8px 0}
+  </style>
+</head>
+<body>
+  <h2>Local Media Censor</h2>
+  <p id="version" class="muted"></p>
+  <p class="note">The extension estimates male/female appearance from clear, associated faces. People without a reliable estimate stay unclassified. “Allow unclassified” reveals those people.</p>
+  <p id="pageStatus" class="muted" aria-live="polite">Checking this page…</p>
+  <label><input id="enabled" type="checkbox"> Enabled</label>
+  <label><input id="images" type="checkbox"> Images</label>
+  <label><input id="videos" type="checkbox"> Videos</label>
+  <label>Filter <select id="filter"><option value="female">Female only</option><option value="male">Male only</option><option value="both">Both</option><option value="off">Off</option></select></label>
+  <label><input id="bodySkin" type="checkbox"> Body skin</label>
+  <label><input id="hair" type="checkbox"> Hair</label>
+  <label><input id="faceSkin" type="checkbox"> Face skin</label>
+  <label><input id="automaticGender" type="checkbox"> Estimate male/female appearance automatically</label>
+  <label>Unclassified people <select id="unknown"><option value="selected">Censor selected areas</option><option value="allow">Allow unclassified people</option></select></label>
+  <label>Performance preset <select id="performance"><option value="performance">Performance</option><option value="balanced">Balanced</option><option value="quality">Quality</option></select></label>
+  <label>ONNX CPU threads <select id="onnxThreads"><option value="auto">Auto</option><option value="1">1</option><option value="2">2</option><option value="4">4</option><option value="6">6</option><option value="8">8</option><option value="12">12</option><option value="16">16</option></select></label>
+  <p class="muted">Higher thread counts can be slower when CPU and GPU work compete. Changing this restarts the analysis engine.</p>
+  <details>
+    <summary>Model resolution</summary>
+    <p class="muted">Higher resolution may find smaller details but takes longer. Auto follows the performance preset. Changes reanalyze current media.</p>
+    <label>YOLO image input <output id="yoloImageSizeValue"></output><input id="yoloImageSize" type="range" min="0" max="3" step="1"></label>
+    <label>YOLO video input <output id="yoloVideoSizeValue"></output><input id="yoloVideoSize" type="range" min="0" max="3" step="1"></label>
+    <label>YuNet input <output id="yunetSizeValue"></output><input id="yunetSize" type="range" min="0" max="2" step="1"></label>
+    <label>Face capture <output id="faceCaptureSizeValue"></output><input id="faceCaptureSize" type="range" min="0" max="3" step="1"></label>
+    <p class="muted">Face capture sets the source detail for YuNet and FastFace crops. MediaPipe semantic stays at its packaged 256×256 input; FastFace stays at 128×128. Their model input sizes cannot be changed with these files.</p>
+  </details>
+  <label>Face/person matching <select id="faceAssociationMode"><option value="overlap">Overlap score (stricter)</option><option value="center">Face-box center point</option></select></label>
+  <label><input id="debugOverlay" type="checkbox"> Show AI debug outlines, face boxes, and gender estimates</label>
+  <label><input id="faceAssociation" type="checkbox"> Face association diagnostics</label>
+  <details>
+    <summary>Advanced AI thresholds</summary>
+    <p class="muted">Lower confidence cutoffs detect more candidates but can increase false detections and incorrect labels. Changes reanalyze current media.</p>
+    <label>YOLO person confidence <output id="yoloConfidenceValue"></output><input id="yoloConfidence" type="range" min="0.01" max="0.99" step="0.01"></label>
+    <label>Face detection confidence <output id="faceDetectionConfidenceValue"></output><input id="faceDetectionConfidence" type="range" min="0.10" max="0.99" step="0.01"></label>
+    <label>Minimum detected face width (px) <output id="minFaceSizePxValue"></output><input id="minFaceSizePx" type="range" min="4" max="64" step="1"></label>
+    <label>Gender estimate confidence <output id="genderConfidenceValue"></output><input id="genderConfidence" type="range" min="0.10" max="0.99" step="0.01"></label>
+    <label>Small-face boundary (px) <output id="smallFaceCutoffPxValue"></output><input id="smallFaceCutoffPx" type="range" min="4" max="64" step="1"></label>
+    <label>Small-face confidence <output id="smallFaceConfidenceValue"></output><input id="smallFaceConfidence" type="range" min="0.10" max="0.99" step="0.01"></label>
+    <label>Face/person mask coverage <output id="faceCoverageValue"></output><input id="faceCoverage" type="range" min="0.10" max="0.99" step="0.01"></label>
+    <label>Association winner margin <output id="faceMarginValue"></output><input id="faceMargin" type="range" min="0.00" max="0.80" step="0.01"></label>
+    <label>Center-point mask confidence <output id="centerMaskConfidenceValue"></output><input id="centerMaskConfidence" type="range" min="0.10" max="0.99" step="0.01"></label>
+  </details>
+  <label>Site exceptions (exact hostnames) <input id="siteExceptions" type="text" placeholder="example.com, another.test"></label>
+  <button id="labelPerson">Label person on page</button> <button id="retryEngine">Retry engine</button>
+  <p class="muted">Labels last only for the current media session. Click the person after choosing this action.</p>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

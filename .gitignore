@@ -1,0 +1,9 @@
+node_modules/
+.venv/
+dist/
+.vite/
+.cache/
+models/*.onnx
+models/*.pt
+models/*.tflite
+*.log

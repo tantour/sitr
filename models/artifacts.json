@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "exports": {
+    "tool": "ultralytics 8.4.38",
+    "format": "ONNX",
+    "opset": 17,
+    "batch": 1,
+    "dynamic": false,
+    "nms": false,
+    "dtype": "float32",
+    "simplified": false
+  },
+  "artifacts": [
+    { "name": "yolo26n-seg-256.onnx", "sha256": "95f531fb7cd9cd5d9df8c7e81e5faf124f20359ac39c7cd538283bb45323f7b9", "source": "export of yolo26n-seg.pt at 256" },
+    { "name": "yolo26n-seg-320.onnx", "sha256": "6421b8490818e6ebb92d2e25ec61885c5a09c15d68266be606336f04c99c4add", "source": "export of yolo26n-seg.pt at 320" },
+    { "name": "yolo26n-seg-416.onnx", "sha256": "97c149de75b9c61cd430a990eaad53c2078478b9c7d9951f11b797ab8161d3af", "source": "export of yolo26n-seg.pt at 416" },
+    { "name": "selfie_multiclass_256x256.tflite", "sha256": "c6748b1253a99067ef71f7e26ca71096cd449baefa8f101900ea23016507e0e0", "source": "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite" },
+    { "name": "yunet-2026may.onnx", "sha256": "ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0", "source": "https://media.githubusercontent.com/media/opencv/opencv_zoo/47534e27c9851bb1128ccc0102f1145e27f23f98/models/face_detection_yunet/face_detection_yunet_2026may.onnx", "origin": "OpenCV Zoo YuNet 2026may", "license": "MIT" },
+    { "name": "fastface-large-128.onnx", "sha256": "359532121277eed67423c91b1b68eb45fbb80e2f6172ce0605da423afc6dced8", "source": "https://huggingface.co/iFurySt/fastface/resolve/main/models/fastface-large-128/model_fp32.onnx", "origin": "FastFace Large 128, MobileNetV3", "license": "Apache-2.0" }
+  ],
+  "sourceWeights": { "name": "yolo26n-seg.pt", "sha256": "361fbfabab285c3237700b6bb91d7ecfa602cd945fffda8dbec1242829b71e73f", "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-seg.pt" },
+  "referenceExport": { "name": "yolo26n-seg-640.onnx", "sha256": "711e0ef837c677ae4006f65fe503a62a6b0529979f4828ed50b674a7482b7d2e", "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-seg.onnx" }
+}
