@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Sitr contributors
 from pathlib import Path
 import shutil
 import os
@@ -23,3 +25,16 @@ for size in (256, 320, 416):
     print(f'{destination.name}: input={input_dims}, output={outputs}')
     if input_dims != [1, 3, size, size] or len(outputs) < 2 or outputs[0][-1] != 38:
         raise SystemExit(f'Unexpected export contract: {destination.name}')
+
+source = root / 'models' / 'yolo26n.pt'
+destination = root / 'models' / 'yolo26n-det-256.onnx'
+if not destination.exists():
+    exported = Path(YOLO(str(source)).export(format='onnx', imgsz=256, batch=1,
+                                     dynamic=False, nms=False, simplify=False, opset=17))
+    shutil.move(str(exported), str(destination))
+graph = onnx.load(str(destination))
+onnx.checker.check_model(graph)
+outputs = [[d.dim_value for d in node.type.tensor_type.shape.dim] for node in graph.graph.output]
+if outputs != [[1, 300, 6]]:
+    raise SystemExit(f'Unexpected detection export contract: {destination.name}: {outputs}')
+print(f'{destination.name}: output={outputs}')

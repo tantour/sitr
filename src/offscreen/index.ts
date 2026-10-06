@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Sitr contributors
 import { ENGINE, resolveOnnxThreads, type Settings, type Label } from '../config/settings';
 import type { FrameKey, FramePacket, WorkerInput, WorkerOutput } from '../state/contracts';
 
@@ -5,10 +7,10 @@ let worker: Worker | undefined;
 let workerReady = false;
 let workerFailure = '';
 let forceCpuSemantic = false;
-let onnxBackend: 'wasm' | 'webgpu' = 'wasm';
+let onnxBackend: 'wasm' | 'webgpu' = 'webgpu';
 let onnxThreads = resolveOnnxThreads('auto', navigator.hardwareConcurrency);
 let parallelSemantic = false;
-let completedAnalysis = false;
+const completedSizes = new Set<number>();
 let busy = false;
 let activeReply: ((value: unknown) => void) | undefined;
 let activeKey: FrameKey | undefined;
@@ -16,18 +18,19 @@ let activeKind: 'analyze' | 'control' | undefined;
 let activeQueueWaitMs = 0;
 let activeTimeout: number | undefined;
 let activeDispatchId = 0;
-let consecutiveImages = 0;
+let consecutiveVideos = 0;
 let queued = new Map<string, Job>();
 const owners = new Map<string, { tabId: number; frameId: number; documentId?: string; epoch: number }>();
 let restarts: number[] = [];
 let restartTimer: number | undefined;
-let pendingWarm: { size: number; faces: boolean; gender: boolean } | undefined;
+let pendingWarm: { size: number; kind: 'image' | 'video'; detector: 'segment' | 'fast-box'; semantic: boolean; faces: boolean; gender: boolean } | undefined;
 
 type Request =
   | { type: 'analyze'; frame: FramePacket; settings: Settings }
+  | { type: 'reuse-image'; key: FrameKey; fromKey: FrameKey; settings: Settings }
   | { type: 'reevaluate'; key: FrameKey; settings: Settings }
   | { type: 'label-track'; key: FrameKey; trackId: string; label: Label; settings: Settings }
-  | { type: 'prepare-engine'; size: number; faces: boolean; gender: boolean; threads: number }
+  | { type: 'prepare-engine'; size: number; kind: 'image' | 'video'; detector: 'segment' | 'fast-box'; semantic: boolean; faces: boolean; gender: boolean; threads: number }
   | { type: 'reset-session'; mediaSessionId: string; epoch: number };
 type Job = { request: Exclude<Request, { type: 'reset-session' } | { type: 'prepare-engine' }>; key: FrameKey; reply: (value: unknown) => void; enqueuedAt: number };
 
@@ -56,14 +59,15 @@ function scheduleNext(): void {
   if (busy || !workerReady || !worker || queued.size === 0) return;
   const jobs = [...queued.values()].sort((a, b) => {
     const priority = (job: Job) => job.request.type !== 'analyze' ? 3
-      : job.request.frame.kind === 'image' ? 1 : consecutiveImages >= 2 ? 2 : 0;
+      : job.request.frame.kind === 'video' ? consecutiveVideos >= 3 ? 0 : 2 : 1;
     return priority(b) - priority(a) || a.enqueuedAt - b.enqueuedAt;
   });
   for (const job of jobs) {
     queued.delete(job.key.mediaSessionId);
     const owner = owners.get(job.key.mediaSessionId);
     if (!owner || owner.epoch !== job.key.epoch) { job.reply({ ok: false, error: 'stale-session' }); continue; }
-    if (job.request.type === 'analyze' && job.request.frame.kind === 'video' && Date.now() - job.request.frame.capturedAtMs > ENGINE.maxResultAgeMs) {
+    if (job.request.type === 'analyze' && job.request.frame.kind === 'video' && !job.request.frame.paused &&
+        Date.now() - job.request.frame.capturedAtMs > (job.request.settings.videoPlayback === 'smooth' ? 2000 : ENGINE.maxResultAgeMs)) {
       job.reply({ ok: false, error: 'stale' });
       continue;
     }
@@ -81,6 +85,7 @@ function run(job: Job): void {
   const dispatchId = ++activeDispatchId;
   let input: WorkerInput;
   if (job.request.type === 'analyze') input = { type: 'analyze', frame: job.request.frame, settings: job.request.settings };
+  else if (job.request.type === 'reuse-image') input = { type: 'reuse-image', key: job.key, fromKey: job.request.fromKey, settings: job.request.settings };
   else if (job.request.type === 'reevaluate') input = { type: 'settings', key: job.key, settings: job.request.settings };
   else input = { type: 'label', key: job.key, trackId: job.request.trackId, label: job.request.label, settings: job.request.settings };
   try {
@@ -95,13 +100,16 @@ function run(job: Job): void {
     if (activeDispatchId === dispatchId && sameKey(activeKey, job.key)) {
       restartEngine('Analysis timed out');
     }
-  }, completedAnalysis ? 8000 : 20000);
+  // Each resolution compiles its own GPU graph, including a video's first size
+  // after an image has completed. Keep the short watchdog for warmed sessions.
+  }, job.request.type === 'analyze' && !completedSizes.has(job.request.frame.width) ? 45000 : 8000);
 }
 function restartEngine(reason: string, semanticFailure = false): void {
   worker?.terminate(); worker = undefined; workerReady = false;
   workerFailure = reason;
   if (semanticFailure) forceCpuSemantic = true;
-  completedAnalysis = false;
+  else if (onnxBackend === 'webgpu') onnxBackend = 'wasm';
+  completedSizes.clear();
   failActive('backend-retry');
   const now = Date.now();
   restarts = restarts.filter(time => now - time < 300000);
@@ -122,16 +130,17 @@ function queue(job: Job): void {
   }
   if (prior) prior.reply({ ok: false, error: 'replaced' });
   else if (queued.size >= 8) {
-    const oldestVideo = [...queued.values()].filter(item => item.request.type === 'analyze' && item.request.frame.kind === 'video')
+    const oldestImage = [...queued.values()].filter(item => item.request.type === 'analyze' && item.request.frame.kind === 'image')
       .sort((a, b) => a.enqueuedAt - b.enqueuedAt)[0];
-    if (!oldestVideo) { job.reply({ ok: false, error: 'capacity' }); return; }
-    queued.delete(oldestVideo.key.mediaSessionId);
-    oldestVideo.reply({ ok: false, error: 'replaced' });
+    if (!oldestImage) { job.reply({ ok: false, error: 'capacity' }); return; }
+    queued.delete(oldestImage.key.mediaSessionId);
+    oldestImage.reply({ ok: false, error: 'replaced' });
   }
   queued.set(job.key.mediaSessionId, job);
 }
 function startWorker(): void {
   worker?.terminate();
+  completedSizes.clear();
   workerReady = false;
   workerFailure = '';
   worker = new Worker(chrome.runtime.getURL('worker.js'));
@@ -144,10 +153,10 @@ function startWorker(): void {
     }
     if (output.type === 'result' && matchingResult(activeKey, output.result.key)) {
       if (output.result.timingsMs) output.result.timingsMs.queue = activeQueueWaitMs;
-      completedAnalysis = true;
+      completedSizes.add(output.result.width);
       if (activeKind === 'analyze') {
-        if (output.result.mediaTimeSec === undefined) consecutiveImages++;
-        else consecutiveImages = 0;
+        if (output.result.mediaTimeSec === undefined) consecutiveVideos = 0;
+        else consecutiveVideos++;
       }
       if (activeTimeout !== undefined) clearTimeout(activeTimeout);
       activeTimeout = undefined;
@@ -179,7 +188,7 @@ chrome.runtime.onMessage.addListener((request: Request, sender, reply) => {
     }
     if (restartTimer !== undefined) { clearTimeout(restartTimer); restartTimer = undefined; }
     restarts = [];
-    completedAnalysis = false;
+    completedSizes.clear();
     workerFailure = '';
     worker?.terminate(); worker = undefined; workerReady = false;
     failActive('backend-retry');
@@ -188,7 +197,8 @@ chrome.runtime.onMessage.addListener((request: Request, sender, reply) => {
     return false;
   }
   if (request?.type === 'prepare-engine') {
-    if (!sender.tab || ![256, 320, 416].includes(request.size) || typeof request.faces !== 'boolean' ||
+    if (!sender.tab || ![256, 320, 416].includes(request.size) || !['image', 'video'].includes(request.kind) ||
+        !['segment', 'fast-box'].includes(request.detector) || (request.detector === 'fast-box' && (request.kind !== 'video' || request.size !== 256)) || typeof request.faces !== 'boolean' ||
         typeof request.gender !== 'boolean' || ![1, 2, 4, 6, 8, 12, 16].includes(request.threads)) {
       reply({ ok: false, error: 'Invalid warmup request' }); return false;
     }
@@ -198,11 +208,12 @@ chrome.runtime.onMessage.addListener((request: Request, sender, reply) => {
       failActive('backend-retry');
       startWorker();
     }
-    pendingWarm = { size: request.size, faces: request.faces, gender: request.gender };
+    pendingWarm = { size: request.size, kind: request.kind, detector: request.detector,
+      semantic: request.semantic, faces: request.faces, gender: request.gender };
     scheduleNext();
     reply({ ok: true }); return false;
   }
-  if (!['analyze', 'reevaluate', 'label-track', 'reset-session'].includes(request?.type)) return false;
+  if (!['analyze', 'reuse-image', 'reevaluate', 'label-track', 'reset-session'].includes(request?.type)) return false;
   const tabId = sender.tab?.id;
   const frameId = sender.frameId;
   if (tabId === undefined || frameId === undefined) { reply({ ok: false, error: 'Invalid sender' }); return false; }
@@ -217,6 +228,13 @@ chrome.runtime.onMessage.addListener((request: Request, sender, reply) => {
     reply({ ok: true }); return false;
   }
   const key = request.type === 'analyze' ? request.frame.key : request.key;
+  if (request.type === 'reuse-image') {
+    const sourceOwner = owners.get(request.fromKey.mediaSessionId);
+    if (!sourceOwner || sourceOwner.tabId !== tabId || sourceOwner.frameId !== frameId ||
+        sourceOwner.documentId !== sender.documentId || sourceOwner.epoch !== request.fromKey.epoch) {
+      reply({ ok: false, error: 'Cached analysis unavailable' }); return false;
+    }
+  }
   const owner = owners.get(key.mediaSessionId);
   if (owner && (owner.tabId !== tabId || owner.frameId !== frameId || owner.documentId !== sender.documentId || key.epoch < owner.epoch)) {
     reply({ ok: false, error: 'Media session ownership mismatch' }); return false;
@@ -227,8 +245,7 @@ chrome.runtime.onMessage.addListener((request: Request, sender, reply) => {
     if (frame.width !== frame.height || frame.width > 416 || frame.width < 128 || frame.rgba?.byteLength !== frame.width * frame.height * 4 || frame.rgba.byteLength > ENGINE.maxPayloadBytes) {
       reply({ ok: false, error: 'Invalid frame' }); return false;
     }
-    const needsFaces = request.settings.automaticGender || request.settings.faceAssociation || request.settings.debugOverlay;
-    if ((frame.faceRgba || frame.faceSize) && (!needsFaces || ![320, 416, 512, 640].includes(frame.faceSize ?? 0) || frame.faceRgba?.byteLength !== frame.faceSize! * frame.faceSize! * 4 || frame.faceRgba.byteLength > ENGINE.maxFacePayloadBytes)) {
+    if ((frame.faceRgba || frame.faceSize) && (![320, 416, 512, 640].includes(frame.faceSize ?? 0) || frame.faceRgba?.byteLength !== frame.faceSize! * frame.faceSize! * 4 || frame.faceRgba.byteLength > ENGINE.maxFacePayloadBytes)) {
       reply({ ok: false, error: 'Invalid face frame' }); return false;
     }
   }

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Sitr contributors
 let worker: Worker | undefined;
 let workerError = '';
 try { worker = new Worker(chrome.runtime.getURL('motion-worker.js')); }

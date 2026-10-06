@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Sitr contributors
 import { createOnnxSession, ort, type OnnxBackend } from './ortRuntime';
 import type { FaceBox } from './semantic';
 
@@ -58,10 +60,12 @@ export class OptionalFaceDetector {
   private backend: OnnxBackend = 'wasm';
   private source = new OffscreenCanvas(1, 1);
   private resized: OffscreenCanvas;
+  private input: Float32Array;
   private lastTimings = { preprocess: 0, run: 0, decode: 0 };
   constructor(private readonly preferredBackend: OnnxBackend = 'wasm', private readonly threads?: number,
     private readonly detectorSide: 256 | 320 | 416 = 320) {
     this.resized = new OffscreenCanvas(detectorSide, detectorSide);
+    this.input = new Float32Array(detectorSide * detectorSide * 3);
   }
 
   async initialize(): Promise<void> {
@@ -80,7 +84,7 @@ export class OptionalFaceDetector {
   async detect(rgba: Uint8Array, size: number): Promise<FaceBox[]> {
     if (!this.session || rgba.length !== size * size * 4 || size <= 0 || size > 640) throw new Error('YuNet input invalid');
     const started = performance.now();
-    let detectorRgba = rgba;
+    let detectorRgba: Uint8Array | Uint8ClampedArray = rgba;
     if (size !== this.detectorSide) {
       if (this.source.width !== size) this.source.width = this.source.height = size;
       const source = this.source.getContext('2d');
@@ -89,10 +93,10 @@ export class OptionalFaceDetector {
       source.putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer as ArrayBuffer, rgba.byteOffset, rgba.byteLength), size, size), 0, 0);
       target.clearRect(0, 0, this.detectorSide, this.detectorSide);
       target.drawImage(this.source, 0, 0, this.detectorSide, this.detectorSide);
-      detectorRgba = new Uint8Array(target.getImageData(0, 0, this.detectorSide, this.detectorSide).data);
+      detectorRgba = target.getImageData(0, 0, this.detectorSide, this.detectorSide).data;
     }
     const pixels = this.detectorSide * this.detectorSide;
-    const input = new Float32Array(pixels * 3);
+    const input = this.input;
     // OpenCV FaceDetectorYN uses blobFromImage defaults: unscaled BGR, NCHW.
     for (let index = 0; index < pixels; index++) {
       input[index] = detectorRgba[index * 4 + 2];
@@ -101,10 +105,12 @@ export class OptionalFaceDetector {
     }
     const runAt = performance.now();
     const output = await this.session.run({ input: new ort.Tensor('float32', input, [1, 3, this.detectorSide, this.detectorSide]) });
-    const decodeAt = performance.now();
-    const boxes = decodeYuNet(output, this.detectorSide);
-    this.lastTimings = { preprocess: runAt - started, run: decodeAt - runAt, decode: performance.now() - decodeAt };
-    return boxes;
+    try {
+      const decodeAt = performance.now();
+      const boxes = decodeYuNet(output, this.detectorSide);
+      this.lastTimings = { preprocess: runAt - started, run: decodeAt - runAt, decode: performance.now() - decodeAt };
+      return boxes;
+    } finally { for (const tensor of Object.values(output)) tensor.dispose(); }
   }
 
   async dispose(): Promise<void> { await this.session?.release(); this.session = undefined; }

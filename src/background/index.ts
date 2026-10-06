@@ -1,6 +1,9 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Sitr contributors
 import { DEFAULT_SETTINGS, normalizeSettings, resolveOnnxThreads, type Settings } from '../config/settings';
 
 let creating: Promise<void> | undefined;
+let settingWrites: Promise<void> = Promise.resolve();
 async function ensureOffscreen(): Promise<void> {
   if (!creating) creating = (async () => {
     const existing = await chrome.offscreen.hasDocument();
@@ -15,18 +18,27 @@ async function current(): Promise<Settings> {
 chrome.runtime.onInstalled.addListener(() => {
   void current().then(s => chrome.storage.local.set({ settings: s }));
 });
-chrome.runtime.onMessage.addListener((message: { type?: string; patch?: Partial<Settings> }, _sender, reply) => {
+chrome.runtime.onMessage.addListener((message: { type?: string; patch?: Partial<Settings> }, sender, reply) => {
+  if (message?.type === 'get-top-level-host') {
+    const url = sender.tab?.url || sender.tab?.pendingUrl;
+    try { reply({ host: url && /^https?:\/\//.test(url) ? new URL(url).hostname.toLowerCase() : undefined }); }
+    catch { reply({}); }
+    return false;
+  }
   if (message?.type === 'get-settings') { void current().then(reply); return true; }
   if (message?.type === 'set-settings') {
-    void current().then(async old => {
+    const write = settingWrites.then(async () => {
+      const old = await current();
       const next = normalizeSettings({ ...old, ...message.patch, revision: old.revision + 1 });
       if (next.onnxThreads !== old.onnxThreads) {
         await ensureOffscreen();
         await chrome.runtime.sendMessage({ type: 'retry-engine', threads: resolveOnnxThreads(next.onnxThreads, navigator.hardwareConcurrency) });
       }
       await chrome.storage.local.set({ settings: next });
-      reply(next);
+      return next;
     });
+    settingWrites = write.then(() => {}, () => {});
+    void write.then(reply, error => reply({ error: String(error) }));
     return true;
   }
   if (message?.type === 'ensure-offscreen') {
@@ -36,7 +48,7 @@ chrome.runtime.onMessage.addListener((message: { type?: string; patch?: Partial<
   if (message?.type === 'fetch-image') {
     const url = (message as { url?: string }).url;
     if (!url || !/^https?:\/\//i.test(url)) { reply({ ok: false, error: 'Unsupported URL' }); return false; }
-    void fetch(url, { credentials: 'include', cache: 'default' }).then(async response => {
+    void fetch(url, { credentials: 'include', cache: 'default', signal: AbortSignal.timeout(10000) }).then(async response => {
       if (!response.ok) throw new Error(`Image fetch failed: ${response.status}`);
       const blob = await response.blob();
       if (!blob.type.startsWith('image/') || blob.size > 20_000_000) throw new Error('Unsupported image response');

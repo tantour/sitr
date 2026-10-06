@@ -1,8 +1,10 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Sitr contributors
 import type { AnalysisResult } from '../state/contracts';
 import type { MotionAnchor } from './frameMotion';
 
 type MotionOutput = { type: 'motion'; source: 'frame' | 'align'; generation: number; cut: boolean;
-  at: number; frames: number; sequence: number; reliable: boolean; offsets: Array<[string, { x: number; y: number }]>; processingMs?: number };
+  at: number; frames: number; sequence: number; reliable: boolean; reliableIds: string[]; offsets: Array<[string, { x: number; y: number }]>; processingMs?: number };
 
 /** Moves readback and block matching off the page thread; one frame may run and one may replace it. */
 export class FrameMotion {
@@ -22,6 +24,7 @@ export class FrameMotion {
   private lastCaptureRequestedAt = 0;
   private alignedSequence = -1;
   private reliable = false;
+  private reliableIds = new Set<string>();
   private failed = false;
   error = '';
   frames = 0;
@@ -52,6 +55,7 @@ export class FrameMotion {
       this.lastObservedAt = value.at;
       this.alignedSequence = value.sequence;
       this.reliable = value.reliable;
+      this.reliableIds = new Set(value.reliableIds);
       this.currentOffsets = new Map(value.offsets);
       if (value.source === 'frame' && previousAt && value.at > previousAt && value.at - previousAt < 250) {
         const dt = (value.at - previousAt) / 1000;
@@ -138,9 +142,17 @@ export class FrameMotion {
     this.lastDisplayAt = now;
     return next;
   }
-  canPropagate(result: AnalysisResult, now: number): boolean {
+  predictedTracks(now = Date.now()): Array<{ id: string; box: { x: number; y: number; width: number; height: number } }> {
+    if (this.failed || now - this.lastObservedAt > 200) return [];
+    const offsets = this.offsets(now);
+    return (this.anchor?.tracks ?? []).filter(track => this.reliableIds.has(track.id)).map(track => {
+      const shift = offsets.get(track.id);
+      return { id: track.id, box: { ...track.box, x: track.box.x + (shift?.x ?? 0), y: track.box.y + (shift?.y ?? 0) } };
+    });
+  }
+  canPropagate(result: AnalysisResult, now: number, maxAgeMs = 900): boolean {
     return !this.failed && this.reliable && this.alignedSequence === result.key.sequence &&
-      now - result.capturedAtMs <= 900 && now - this.lastObservedAt <= 200;
+      now - result.capturedAtMs <= maxAgeMs && now - this.lastObservedAt <= 200;
   }
   reset(): void {
     this.generation++;
@@ -154,6 +166,7 @@ export class FrameMotion {
     this.lastCaptureRequestedAt = 0;
     this.alignedSequence = -1;
     this.reliable = false;
+    this.reliableIds.clear();
     this.lastObservedAt = 0;
     if (this.connected) this.port?.postMessage({ type: 'reset', generation: this.generation });
   }

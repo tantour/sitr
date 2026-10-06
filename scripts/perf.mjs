@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Sitr contributors
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -8,11 +10,13 @@ const root = process.cwd();
 const count = Number(process.env.PERF_COUNT || 24);
 const repetitions = Number(process.env.PERF_REPETITIONS || 3);
 const durationMinutes = Number(process.env.PERF_DURATION_MINUTES || 0);
+const requestedBackend = process.env.PERF_BACKEND;
 if (!Number.isInteger(count) || count < 1 || count > 100 || !Number.isInteger(repetitions) || repetitions < 1 || repetitions > 10 ||
-    !Number.isFinite(durationMinutes) || durationMinutes < 0 || durationMinutes > 30) {
-  throw new Error('PERF_COUNT must be 1–100, PERF_REPETITIONS must be 1–10, and PERF_DURATION_MINUTES must be 0–30');
+    !Number.isFinite(durationMinutes) || durationMinutes < 0 || durationMinutes > 30 ||
+    (requestedBackend && !['wasm', 'webgpu'].includes(requestedBackend))) {
+  throw new Error('PERF_COUNT must be 1–100, PERF_REPETITIONS must be 1–10, PERF_DURATION_MINUTES must be 0–30, and PERF_BACKEND must be wasm or webgpu');
 }
-const fixtureNames = ['bus.jpg', 'woman-profile.jpg', 'man-profile.jpg', 'lena.jpg'];
+const fixtureNames = ['bus.jpg', 'woman-profile.jpg', 'man-profile.jpg'];
 const fixtures = new Map(await Promise.all(fixtureNames.map(async name => [name, await readFile(resolve(root, 'tests/fixtures', name))])));
 const server = createServer((request, response) => {
   const name = request.url?.slice(1);
@@ -34,7 +38,7 @@ try {
   if (process.env.PERF_THREADS && !['1', '2', '4', '6', '8', '12', '16'].includes(process.env.PERF_THREADS)) {
     throw new Error('PERF_THREADS must be 1, 2, 4, 6, 8, 12, or 16');
   }
-  if (process.env.PERF_THREADS || process.env.PERF_SEMANTIC_PARALLEL === '1') {
+  if (process.env.PERF_THREADS || process.env.PERF_SEMANTIC_PARALLEL === '1' || process.env.PERF_BACKEND) {
     const extensionWorker = browser.serviceWorkers()[0] ?? await browser.waitForEvent('serviceworker');
     await extensionWorker.evaluate(async options => {
       if (options.threads) {
@@ -45,8 +49,12 @@ try {
         if (!await chrome.offscreen.hasDocument()) await chrome.offscreen.createDocument({ url: 'offscreen.html', reasons: [chrome.offscreen.Reason.WORKERS], justification: 'Browser performance comparison' });
         await chrome.runtime.sendMessage({ type: 'retry-engine', parallelSemantic: true });
       }
+      if (options.backend) {
+        if (!await chrome.offscreen.hasDocument()) await chrome.offscreen.createDocument({ url: 'offscreen.html', reasons: [chrome.offscreen.Reason.WORKERS], justification: 'Browser ONNX backend comparison' });
+        await chrome.runtime.sendMessage({ type: 'retry-engine', backend: options.backend });
+      }
     }, { threads: Number(process.env.PERF_THREADS) || undefined,
-      parallelSemantic: process.env.PERF_SEMANTIC_PARALLEL === '1' });
+      parallelSemantic: process.env.PERF_SEMANTIC_PARALLEL === '1', backend: process.env.PERF_BACKEND });
   }
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -103,10 +111,13 @@ try {
       })),
     }), started);
     const sorted = result.images.map(image => image.revealMs).sort((a, b) => a - b);
+    const uncached = result.images.filter(image => image.timings.backend !== 'cache');
     samples.push({ round: round + 1, count, elapsedMs: result.elapsedMs,
       imagesPerSecond: Math.round(count * 1000 / result.elapsedMs * 100) / 100,
       p50RevealMs: sorted[Math.floor(sorted.length * .5)], p95RevealMs: sorted[Math.floor(sorted.length * .95)],
       cached: result.images.filter(image => image.timings.backend === 'cache').length,
+      uncachedPersonRunMs: uncached.length ? Math.round(uncached.reduce((sum, image) => sum + (image.timings.personRun || 0), 0) / uncached.length) : null,
+      backends: [...new Set(uncached.map(image => image.timings.backend).filter(Boolean))],
       threads: [...new Set(result.images.map(image => image.timings.onnxThreads).filter(Boolean))],
       meanStagesMs: Object.fromEntries(['acquire', 'queue', 'personRun', 'personDecode', 'semantic', 'semanticRun', 'face', 'faceRun', 'gender', 'genderRun', 'composition', 'render']
         .map(key => [key, Math.round(result.images.reduce((sum, image) => sum + (image.timings[key] || 0), 0) / count)])),

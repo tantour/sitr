@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Sitr contributors
 import { describe, expect, it } from 'vitest';
 import { YoloMaskDecoder } from '../src/vision/maskDecode';
 import type { Rect } from '../src/state/contracts';
@@ -21,6 +23,24 @@ function reference(records: Float32Array, offset: number, proto: Float32Array,
 }
 
 describe('YOLO mask decoding', () => {
+  it.each([[256, 64, 64], [320, 80, 80], [416, 104, 104], [31, 9, 7], [9, 13, 11]])(
+    'preserves every pixel at size %i with %i by %i prototypes', (size, protoWidth, protoHeight) => {
+      const channels = 3;
+      const proto = Float32Array.from({ length: channels * protoWidth * protoHeight }, (_, i) => Math.sin(i * .7));
+      const records = Float32Array.from({ length: 6 + channels }, (_, i) => Math.cos(i));
+      const decoder = new YoloMaskDecoder(proto, channels, protoWidth, protoHeight, size);
+      for (const box of [
+        { x: 0, y: 0, width: 1, height: 1 },
+        { x: -.1, y: .153, width: .724, height: 1 },
+        { x: .517, y: .213, width: .002, height: .003 },
+        { x: .9, y: .8, width: .3, height: .4 },
+      ]) {
+        const actual = decoder.decode(records, 0, box);
+        const expected = reference(records, 0, proto, channels, protoWidth, protoHeight, size, box);
+        expect(actual.length).toBe(expected.length);
+        expect(actual.every((pixel, index) => Object.is(pixel, expected[index]))).toBe(true);
+      }
+    });
   it('matches the original per-pixel calculation across boxes and detections', () => {
     const size = 32, protoWidth = 8, protoHeight = 8, channels = 5;
     const proto = Float32Array.from({ length: channels * protoWidth * protoHeight }, (_, i) => Math.sin(i * 1.7));

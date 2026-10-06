@@ -1,0 +1,39 @@
+name: Validate release
+on:
+  workflow_dispatch:
+    inputs:
+      models_url:
+        description: HTTPS URL for the matching model ZIP
+        required: true
+        type: string
+      models_sha256:
+        description: SHA-256 of that model ZIP
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Install verified models
+        env:
+          MODEL_URL: ${{ inputs.models_url }}
+          MODEL_SHA: ${{ inputs.models_sha256 }}
+        run: node scripts/models.mjs --url "$env:MODEL_URL" --sha256 "$env:MODEL_SHA"
+      - run: npx playwright install chromium
+      - run: npm audit --audit-level=low
+      - run: npm run release
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sitr-release
+          path: release/*
+          if-no-files-found: error
+          retention-days: 14

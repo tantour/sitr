@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Sitr contributors
 import { chromium } from 'playwright';
 import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -5,7 +7,7 @@ import { tmpdir } from 'node:os';
 
 const root = process.cwd();
 const side = Number(process.env.FACE_PROBE_SIZE ?? 640);
-const files = Object.fromEntries(await Promise.all(['lena', 'bus', 'woman-profile', 'man-profile'].map(async name =>
+const files = Object.fromEntries(await Promise.all(['bus', 'woman-profile', 'man-profile'].map(async name =>
   [name, (await readFile(resolve(root, `tests/fixtures/${name}.jpg`))).toString('base64')])));
 const profile = await mkdtemp(resolve(tmpdir(), 'face-probe-'));
 let browser;
@@ -61,7 +63,7 @@ try {
     return results;
   }, { files, side, ownershipProbe: process.env.FACE_PROBE_OWNERSHIP === '1' });
   console.log(JSON.stringify(results, null, 2));
-  for (const name of ['lena', 'woman-profile', 'man-profile']) {
+  for (const name of ['woman-profile', 'man-profile']) {
     if (!results[name].faces.length) throw new Error(`YuNet missed ${name}`);
   }
   if (results.bus.faces.length < 2) throw new Error('YuNet missed the two clear bus faces');

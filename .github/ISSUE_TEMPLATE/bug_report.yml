@@ -1,0 +1,29 @@
+name: Bug report
+description: Report a reproducible Sitr issue
+body:
+  - type: markdown
+    attributes:
+      value: "For security vulnerabilities use private reporting (SECURITY.md). Do not post private media, cookies, or sensitive URLs."
+  - type: input
+    id: versions
+    attributes:
+      label: Sitr version, Chrome version, and operating system
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps and relevant settings
+      description: Include a minimal local or public fixture where possible.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized status or diagnostics

@@ -2,28 +2,128 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <style>
-    body{font:14px system-ui;width:340px;max-height:720px;overflow:auto;padding:14px;background:#111;color:#eee}
-    label{display:block;margin:10px 0}select,input,button{font:inherit}
-    input[type=number]{width:72px}input[type=range]{width:100%;accent-color:#b88aff}input[type=text]{box-sizing:border-box;width:100%}
-    button{padding:6px 10px}.muted{color:#aaa}.note{background:#242424;padding:9px;line-height:1.4}
-    h2{margin:0 0 4px}p{margin:8px 0}
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sitr</title>
+  <link rel="stylesheet" href="popup.css">
 </head>
-<body>
-  <h2>Local Media Censor</h2>
-  <p id="version" class="muted"></p>
-  <p class="note">The extension estimates male/female appearance from clear, associated faces. People without a reliable estimate stay unclassified. “Allow unclassified” reveals those people.</p>
-  <p id="pageStatus" class="muted" aria-live="polite">Checking this page…</p>
-  <label><input id="enabled" type="checkbox"> Enabled</label>
-  <label><input id="images" type="checkbox"> Images</label>
-  <label><input id="videos" type="checkbox"> Videos</label>
-  <label>Filter <select id="filter"><option value="female">Female only</option><option value="male">Male only</option><option value="both">Both</option><option value="off">Off</option></select></label>
-  <label><input id="bodySkin" type="checkbox"> Body skin</label>
-  <label><input id="hair" type="checkbox"> Hair</label>
-  <label><input id="faceSkin" type="checkbox"> Face skin</label>
+<body data-view="popup" class="loading">
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><img src="icons/sitr-logo.png" width="32" height="32" alt=""><div><h1 id="appTitle">Sitr</h1><span id="appSubtitle">Private media protection</span></div></div>
+      <span id="version" class="settings-only"></span>
+      <div class="interface-controls">
+        <select id="uiTheme" aria-label="Theme" title="Theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+        <select id="uiLanguage" aria-label="Language" title="Language"><option value="en" lang="en">English</option><option value="ar" lang="ar">العربية</option></select>
+      </div>
+    </header>
+    <div class="workspace">
+      <nav class="settings-nav settings-only" aria-label="Settings sections">
+        <button type="button" data-section="coverage" aria-current="page">Coverage</button>
+        <button type="button" data-section="detection">Detection</button>
+        <button type="button" data-section="performance">Performance</button>
+        <button type="button" data-section="diagnostics">Diagnostics</button>
+        <button type="button" data-section="websites">Websites</button>
+        <p>All processing stays on your device.</p>
+      </nav>
+      <main id="mainContent">
+        <section data-settings-panel="coverage" aria-label="Coverage settings">
+          <section class="protection" aria-labelledby="protectionTitle">
+            <div><h2 id="protectionTitle">Loading protection…</h2><p id="protectionState">Checking settings…</p></div>
+            <label class="switch"><input id="enabled" type="checkbox" role="switch" aria-label="Enable protection" disabled><span class="switch-track"></span></label>
+          </section>
+          <div class="primary-controls">
+            <label class="filter-field" for="filter"><span>Cover people</span><select id="filter" disabled><option value="female">Female appearance</option><option value="male">Male appearance</option><option value="both">Everyone</option><option value="off">No one</option></select></label>
+            <fieldset class="media-options"><legend>Apply to</legend>
+              <label class="media-option"><input id="images" type="checkbox" disabled><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="9" r="1.5"/><path d="m4 17 5-5 3 3 2-2 6 5"/></svg><span>Images</span></label>
+              <label class="media-option"><input id="videos" type="checkbox" disabled><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="m10 9 5 3-5 3V9Z"/></svg><span>Videos</span></label>
+            </fieldset>
+          </div>
+          <section class="appearance-settings" aria-label="Coverage appearance">
+            <div class="media-tabs popup-only" role="tablist" aria-label="Appearance settings">
+              <button id="imagesTab" type="button" role="tab" aria-selected="true" aria-controls="imagePanel" tabindex="0">Images</button>
+              <button id="videosTab" type="button" role="tab" aria-selected="false" aria-controls="videoPanel" tabindex="-1">Videos</button>
+            </div>
+            <div class="appearance-columns">
+              <section id="imagePanel" class="appearance-group" role="tabpanel" aria-labelledby="imagesTab" tabindex="0">
+                <h2 class="settings-only">Image appearance</h2>
+                <p id="imagesDisabled" class="media-disabled" hidden>Image protection is off. Turn on Images above to apply these settings.</p>
+                      <label class="setting-field">Cover area <select id="imageCoverage"><option value="regions">Selected skin and hair</option><option value="whole-body">Whole body · separate face effect</option><option value="whole-body-face">Whole body · same effect on face</option></select></label>
+      <div id="imageRegionControls">
+        <div class="checkbox-pair"><label><input id="bodySkin" type="checkbox"> Body skin</label><label><input id="hair" type="checkbox"> Hair</label></div>
+        <label class="setting-field">Face effect <select id="imageRegionFaceEffect"><option value="show">Show face</option><option value="black">Black</option><option value="blur">Blur</option><option value="checkerboard">Checkerboard blur</option></select></label>
+        <p class="setting-hint">Selected skin and hair use a black mask.</p>
+      </div>
+      <div id="imageWholeBodyControls" hidden>
+        <label class="setting-field">Body effect <select id="imageWholeBodyEffect"><option value="black">Black</option><option value="blur">Blur</option><option value="checkerboard">Checkerboard blur</option></select></label>
+        <label id="imageWholeBodyFaceControl" class="setting-field">Face effect <select id="imageWholeBodyFaceEffect"><option value="show">Show face</option><option value="black">Black</option><option value="blur">Blur</option><option value="checkerboard">Checkerboard blur</option></select></label>
+        <p id="imageFaceOpeningHelp" class="setting-hint">A face stays covered if it cannot be matched to one person.</p>
+        <details id="imageEffectOptions" class="effect-details" hidden><summary>Adjust body effect</summary>
+          <label class="range-field">Body effect strength <output id="imageEffectIntensityValue"></output><input id="imageEffectIntensity" type="range" min="8" max="64" step="1"></label>
+          <label class="check-option"><input id="imageEffectGrayscale" type="checkbox"> Grayscale effect</label>
+        </details>
+      </div>
+      <details id="imageFaceEffectOptions" class="effect-details" hidden><summary>Adjust face effect</summary>
+        <label class="range-field">Face effect strength <output id="imageFaceEffectIntensityValue"></output><input id="imageFaceEffectIntensity" type="range" min="8" max="64" step="1"></label>
+        <label class="check-option"><input id="imageFaceEffectGrayscale" type="checkbox"> Grayscale face effect</label>
+      </details>
+      <details id="skinThresholdSettings" class="skin-threshold-settings">
+        <summary>Skin exposure rules</summary>
+        <p class="setting-hint">Applies to your selected people. Body skin is measured as a share of the detected person; face skin is excluded.</p>
+        <div class="skin-rule">
+          <label class="check-option"><input id="imageSkinThresholdEnabled" type="checkbox"> Black high-skin bodies</label>
+          <div id="imageSkinThresholdControls" hidden>
+            <label class="setting-field">Skin above (%) <input id="imageSkinThresholdPercent" type="number" min="0" max="100" step="1" required></label>
+            <label class="check-option"><input id="imageSkinThresholdIncludeFace" type="checkbox"> Include face in blackout</label>
+            <p class="setting-hint">Matched faces stay visible when this is off. This rule uses black, regardless of the body effect.</p>
+          </div>
+        </div>
+        <div class="skin-rule">
+          <label class="check-option"><input id="imageGroupSkinThresholdEnabled" type="checkbox"> Black image for high-skin groups</label>
+          <div id="imageGroupSkinThresholdControls" hidden>
+            <label class="setting-field">Skin at least (%) <input id="imageGroupSkinThresholdPercent" type="number" min="0" max="100" step="1" required></label>
+            <label class="setting-field">More than (people) <input id="imageGroupSkinPeopleLimit" type="number" min="1" max="19" step="1" required></label>
+            <p class="setting-hint">Black the whole image when more than this many selected people reach the skin percentage.</p>
+          </div>
+        </div>
+      </details>
+              </section>
+              <section id="videoPanel" class="appearance-group" role="tabpanel" aria-labelledby="videosTab" tabindex="0" hidden>
+                <h2 class="settings-only">Video appearance</h2>
+                <p id="videosDisabled" class="media-disabled" hidden>Video protection is off. Turn on Videos above to apply these settings.</p>
+                      <label class="setting-field">Effect <select id="videoEffect"><option value="black">Black</option><option value="blur">Blur</option><option value="checkerboard">Checkerboard blur</option></select></label>
+      <details id="videoEffectOptions" class="effect-details" hidden><summary>Adjust video effect</summary>
+        <label class="range-field">Effect strength <output id="videoEffectIntensityValue"></output><input id="videoEffectIntensity" type="range" min="8" max="64" step="1"></label>
+        <label class="check-option"><input id="videoEffectGrayscale" type="checkbox"> Grayscale effect</label>
+      </details>
+                <p class="setting-hint">Videos cover the whole person, including the face.</p>
+              </section>
+            </div>
+          </section>
+        </section>
+        <div class="advanced-body settings-only">
+          <section class="settings-panel settings-only" data-settings-panel="detection" hidden><h2>Models and detection</h2><div class="tech-body">
   <label><input id="automaticGender" type="checkbox"> Estimate male/female appearance automatically</label>
-  <label>Unclassified people <select id="unknown"><option value="selected">Censor selected areas</option><option value="allow">Allow unclassified people</option></select></label>
+  <fieldset><legend>Images</legend>
+    <label>Gender model <select id="imageGenderModel"><option value="face">Face (current)</option><option value="body-paddle">Whole body · Paddle</option><option value="body-intel">Whole body · Intel</option><option value="face-paddle">Face, then Paddle if unavailable</option><option value="face-intel">Face, then Intel if unavailable</option></select></label>
+    <label>Unclassified people <select id="imageUnknown"><option value="selected">Censor</option><option value="allow">Show</option></select></label>
+    <p class="muted">Whole-body gender uses the person crop to estimate appearance. Uncertain estimates stay unclassified.</p>
+    <label>Only censor images when <select id="imageDetectionGate"><option value="any">No detection required (current behavior)</option><option value="face">A face is detected</option><option value="person">A YOLO person is detected</option><option value="either">A face or YOLO person is detected</option><option value="both">Both a face and YOLO person are detected</option></select></label>
+    <p class="muted">This also controls MediaPipe-only masks. Requiring a detection can leave a person uncovered when a model misses them.</p>
+    <label>Image mask expansion <output id="imageExpansionValue"></output><input id="imageExpansion" type="range" min="0" max="24" step="1" aria-describedby="expansionHelp"></label>
+  </fieldset>
+  <fieldset><legend>Videos</legend>
+    <label>Gender model <select id="videoGenderModel"><option value="face">Face (current)</option><option value="body-paddle">Whole body · Paddle</option><option value="body-intel">Whole body · Intel</option><option value="face-paddle">Face, then Paddle if unavailable</option><option value="face-intel">Face, then Intel if unavailable</option></select></label>
+    <label>Unclassified people <select id="videoUnknown"><option value="selected">Censor</option><option value="allow">Show</option></select></label>
+    <p class="muted">Whole-body gender uses person boxes without the face gender classifier. Uncertain estimates stay unclassified.</p>
+    <label>Playback <select id="videoPlayback"><option value="smooth">Smooth</option><option value="strict">Strict</option></select></label>
+    <label>Person detector <select id="videoDetector"><option value="segment">YOLO silhouette</option><option value="fast-box">Fast person boxes</option></select></label>
+    <p class="muted">Fast boxes use a 256 × 256 detection model. They run faster but cover rectangular areas around people.</p>
+    <label>Video mask expansion <output id="videoExpansionValue"></output><input id="videoExpansion" type="range" min="0" max="24" step="1" aria-describedby="expansionHelp"></label>
+    <p id="videoCoverageHelp" class="muted">Video covers selected people's full silhouettes, including faces. Fast motion can still outrun a mask.</p>
+  </fieldset>
+  <p id="expansionHelp" class="muted">Expansion adds a margin in analysis pixels. Larger values cover more nearby area.</p>
+  </div></section>
+<section class="settings-panel settings-only" data-settings-panel="performance" hidden><h2>Performance and resolution</h2><div class="tech-body">
   <label>Performance preset <select id="performance"><option value="performance">Performance</option><option value="balanced">Balanced</option><option value="quality">Quality</option></select></label>
   <label>ONNX CPU threads <select id="onnxThreads"><option value="auto">Auto</option><option value="1">1</option><option value="2">2</option><option value="4">4</option><option value="6">6</option><option value="8">8</option><option value="12">12</option><option value="16">16</option></select></label>
   <p class="muted">Higher thread counts can be slower when CPU and GPU work compete. Changing this restarts the analysis engine.</p>
@@ -31,12 +131,14 @@
     <summary>Model resolution</summary>
     <p class="muted">Higher resolution may find smaller details but takes longer. Auto follows the performance preset. Changes reanalyze current media.</p>
     <label>YOLO image input <output id="yoloImageSizeValue"></output><input id="yoloImageSize" type="range" min="0" max="3" step="1"></label>
-    <label>YOLO video input <output id="yoloVideoSizeValue"></output><input id="yoloVideoSize" type="range" min="0" max="3" step="1"></label>
+    <label id="yoloVideoSizeControl">YOLO video input <output id="yoloVideoSizeValue"></output><input id="yoloVideoSize" type="range" min="0" max="3" step="1"></label>
     <label>YuNet input <output id="yunetSizeValue"></output><input id="yunetSize" type="range" min="0" max="2" step="1"></label>
     <label>Face capture <output id="faceCaptureSizeValue"></output><input id="faceCaptureSize" type="range" min="0" max="3" step="1"></label>
-    <p class="muted">Face capture sets the source detail for YuNet and FastFace crops. MediaPipe semantic stays at its packaged 256×256 input; FastFace stays at 128×128. Their model input sizes cannot be changed with these files.</p>
+    <p class="muted">Face capture sets the source detail for YuNet and FastFace crops. MediaPipe semantic runs for every image mode at its packaged 256×256 input; FastFace stays at 128×128. Their model input sizes cannot be changed with these files.</p>
   </details>
-  <label>Face/person matching <select id="faceAssociationMode"><option value="overlap">Overlap score (stricter)</option><option value="center">Face-box center point</option></select></label>
+  </div></section>
+<section class="settings-panel settings-only" data-settings-panel="diagnostics" hidden><h2>Diagnostics</h2><div class="tech-body">
+  <label id="faceAssociationModeControl">Face/person matching <select id="faceAssociationMode"><option value="overlap">Overlap score (stricter)</option><option value="center">Face-box center point</option></select></label>
   <label><input id="debugOverlay" type="checkbox"> Show AI debug outlines, face boxes, and gender estimates</label>
   <label><input id="faceAssociation" type="checkbox"> Face association diagnostics</label>
   <details>
@@ -48,13 +150,30 @@
     <label>Gender estimate confidence <output id="genderConfidenceValue"></output><input id="genderConfidence" type="range" min="0.10" max="0.99" step="0.01"></label>
     <label>Small-face boundary (px) <output id="smallFaceCutoffPxValue"></output><input id="smallFaceCutoffPx" type="range" min="4" max="64" step="1"></label>
     <label>Small-face confidence <output id="smallFaceConfidenceValue"></output><input id="smallFaceConfidence" type="range" min="0.10" max="0.99" step="0.01"></label>
-    <label>Face/person mask coverage <output id="faceCoverageValue"></output><input id="faceCoverage" type="range" min="0.10" max="0.99" step="0.01"></label>
+    <label>Face/person mask coverage <output id="faceCoverageValue"></output><input id="faceCoverage" type="range" min="0.10" max="0.99" step="0.01" aria-describedby="faceCoverageHelp"></label>
+    <p id="faceCoverageHelp" class="muted">Minimum share of the face center covered by one YOLO person mask. Higher values require a fuller match. Body-only gender and Fast person boxes use their own matching.</p>
     <label>Association winner margin <output id="faceMarginValue"></output><input id="faceMargin" type="range" min="0.00" max="0.80" step="0.01"></label>
     <label>Center-point mask confidence <output id="centerMaskConfidenceValue"></output><input id="centerMaskConfidence" type="range" min="0.10" max="0.99" step="0.01"></label>
   </details>
-  <label>Site exceptions (exact hostnames) <input id="siteExceptions" type="text" placeholder="example.com, another.test"></label>
-  <button id="labelPerson">Label person on page</button> <button id="retryEngine">Retry engine</button>
+  <div class="utility-actions"><button id="labelPerson">Label person on page</button><button id="retryEngine">Retry engine</button></div>
   <p class="muted">Labels last only for the current media session. Click the person after choosing this action.</p>
+  </div></section>
+          <section class="settings-panel" data-settings-panel="websites" hidden>
+            <h2>Websites to skip</h2><p class="muted">Protection is paused on these websites, including their subdomains and embedded media.</p>
+            <label class="setting-field" for="siteExceptions">Domains or URLs <textarea id="siteExceptions" rows="5" dir="ltr" placeholder="example.com, another.test" spellcheck="false"></textarea></label>
+            <p class="muted">Separate entries with commas or new lines. URLs are saved as domains.</p>
+            <button id="saveSites" type="button">Save websites</button>
+          </section>
+        </div>
+      </main>
+      <section class="page-card popup-only" aria-labelledby="pageTitle">
+        <div class="site-heading"><div><h2 id="pageTitle">This site</h2><p id="siteHost" dir="ltr">Checking website…</p></div><button id="toggleSite" type="button" disabled>Pause on this site</button></div>
+        <p id="pageStatus" aria-live="polite">Checking this page…</p>
+        <button id="manageSites" type="button" class="text-button" hidden>Manage site exceptions</button>
+      </section>
+    </div>
+    <footer><span id="saveStatus" role="status" aria-live="polite">Loading settings…</span><button id="retrySettings" type="button" class="text-button" hidden>Retry</button><button id="openSettings" type="button" class="text-button popup-only">All settings <svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M8 4H4v12h12v-4M11 3h6v6M17 3l-8 8"/></svg></button></footer>
+  </div>
   <script type="module" src="popup.js"></script>
 </body>
 </html>

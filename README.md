@@ -1,69 +1,99 @@
-# Local Media Censor
+<p align="center"><img src="icons/sitr-logo.png" width="96" alt="Sitr logo"></p>
 
-Private, unpacked Chrome 148+ Manifest V3 extension for on-device censorship of supported images and sampled video. It combines YOLO26n-seg person masks, MediaPipe semantic masks, temporary tracking, face detection, and an appearance-based male/female classifier. Inference runs locally. No age result, face identity, or cross-session label is used.
+# Sitr · ستر
 
-The current prototype detects and tracks up to 20 person instances per analyzed frame. A headless Chromium smoke fixture with ten people returned ten person tracks, ten face-to-person associations, and ten automatic labels. That fixture repeats two source people; it validates the multi-person plumbing and capacity, not accuracy on ten different people. Frontal and side-facing portrait classifier probes also passed, and one side-facing woman was labelled female by the full extension path. These checks do not establish natural-scene accuracy or performance on your machine. The extension remains fail-closed when a face cannot be classified or ownership is uncertain, so that person stays censored under the default setting.
+**Private image and video filtering, processed on your device.**
 
-YuNet 2026may draws face boxes and provides nose landmarks for face-to-person association. It runs on a 320×320 view of the 640×640 face capture; FastFace Large 128 then classifies crops from the original 640×640 capture. FastFace estimates visible male/female appearance; it does not determine a person's identity or gender, and may be wrong, especially for small, occluded, extreme-profile, or poorly lit faces. It ignores the model's age output. Both models and their licenses are pinned in `models/artifacts.json`. Their scores can be overconfident; the confidence controls are filters, not calibrated correctness guarantees.
+Sitr is a Chrome extension that covers selected people in supported images and videos. Choose skin and hair coverage or whole-person coverage, use black masks, blur, or a pixelated mosaic, and tune images and videos separately. English and Arabic interfaces include light, dark, and system themes.
 
-The current build is a prototype, not release-qualified software or a guarantee that no uncensored frame can appear. Browser measurements, failure cases, and limits are in [BENCHMARK.md](BENCHMARK.md). Cold model startup and inference can be slow; video uses lower-rate analysis with motion-based mask movement between analyses.
+![Sitr popup](docs/images/popup.png)
 
-## Install and run
+**Requires Chrome 148 or newer.** Sitr uses local AI estimates that can miss people, misclassify appearance, or leave parts of moving media uncovered. It does not guarantee that every unwanted image or video frame is hidden. [Supported media and limitations](#supported-media-and-limitations).
 
-1. In PowerShell, open this folder and run `npm.cmd ci`.
-2. Run `npm.cmd run build`. The build checks pinned model SHA-256 hashes. If model files are missing, run `./scripts/download-models.ps1`; YOLO exports can be regenerated with the pinned export environment described in `models/README.md`.
-3. In Chrome 148+, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this folder's `dist` directory.
-4. Open a page with images or readable video. The popup starts in female-only mode, with automatic labeling enabled. People whose faces cannot be confidently labeled remain censored. You can change filter and mask categories in the popup.
-5. After rebuilding, click **Reload** on the extension page and refresh the website tab. Confirm the popup reports **Version 0.4.0**.
+## Install
 
-The default categories are body skin and hair; face skin is disabled. Female-only filtering censors people estimated female and people left unclassified. Estimated male tracks are exempt while tracking continuity is reliable. This is a fallible visual estimate, not a statement about anyone's identity. Skin percentage and uncertain labels do not trigger full-person blacking; uncertain masks are restricted to selected semantic regions. Fail-safe blacking can still occur for inference errors or stale video.
+### From a GitHub release
 
-The popup's **Face/person matching** setting selects either the stricter face-box overlap score or the simpler face-box center point. Changing it reprocesses current media. Ambiguous matches remain unclassified.
+1. Open this repository's **Releases** page and download `sitr-0.4.2-chrome.zip` and `SHA256SUMS.txt`.
+2. Verify the ZIP's SHA-256 against the checksum file, then extract it into a permanent folder. Do not load the ZIP itself.
+3. Visit `chrome://extensions`, turn on **Developer mode**, and choose **Load unpacked**.
+4. Select the extracted folder containing `manifest.json`. Pin **Sitr** using Chrome's extensions menu.
+5. Refresh any already-open website tabs and open Sitr's popup to choose your coverage.
 
-The popup's **Advanced AI thresholds** section exposes the YOLO person confidence threshold, face detector score and minimum face width, gender-estimate confidence (with a separate stricter cutoff for small faces), and face-to-person association coverage, winner margin, and center-mask confidence. The pixel sizes refer to the 640×640 face-analysis frame. Lower confidence thresholds detect more candidates but can increase false detections and mistakes. Changing these controls reanalyzes current media and starts fresh temporary tracks.
+The extension ZIP includes all models and inference runtimes. Python, Node.js, and a server are unnecessary for installation. This repository distributes unpacked builds; no Chrome Web Store listing is assumed.
 
-The **ONNX CPU threads** control offers Auto and 1, 2, 4, 6, 8, 12, or 16 threads. Auto uses 1 thread on machines with up to four logical cores, 2 on five to eight, and 4 above eight. Changing the control restarts local inference and reanalyzes the page. More threads can reduce throughput when CPU inference competes with GPU segmentation, so compare settings on your own machine before increasing it. The thread control does not change models, input sizes, or detection thresholds.
+To update, extract a new release into your existing extension folder, click **Reload** at `chrome://extensions`, and refresh website tabs. Keeping the same folder preserves the unpacked extension's identity and settings. To uninstall, choose **Remove**; Chrome removes its local extension settings.
 
-Open **Model resolution** in the popup to set YOLO image and video resolution independently (Auto, 256, 320, or 416 pixels), YuNet face-detection resolution (256, 320, or 416), and face-source detail (320, 416, 512, or 640). Auto YOLO sizes follow the performance preset; existing settings default to the same effective sizes as before. The face-source slider changes the image captured for detection and face crops, while the packaged FastFace model still receives 128×128 crops. The packaged MediaPipe semantic model still runs at 256×256. Higher values can improve small-detail detection but can increase latency and video blackouts; these controls change input resolution, not the model files or confidence thresholds.
+### Build from source
 
-Enable **Show AI debug outlines, face boxes, and gender estimates** in the popup to draw person-instance mask contours and detected face boxes over media, with each current automatic appearance estimate and confidence. Unknown or unusable track labels are shown as unclassified. These visualizations are diagnostic and do not change censorship rules; they add some inference payload and drawing overhead.
+Use **Node.js 22.12+**, npm, and Git. Model binaries live in release assets to keep the source repository small.
 
-## Test it
-
-Run the checks from PowerShell:
-
-```powershell
-npm.cmd run typecheck
-npm.cmd test
-npm.cmd run build
-npx.cmd playwright install chromium
-$env:SMOKE_GENDER='1'
-$env:SMOKE_QUICK='1'
-node scripts/smoke.mjs
-$env:PERF_THREADS='2'
-$env:PERF_COUNT='12'
-$env:PERF_REPETITIONS='2'
-node scripts/perf.mjs
+```sh
+npm ci
+# Download sitr-0.4.2-models.zip from this repository's Releases page first.
+npm run models -- --archive /path/to/sitr-0.4.2-models.zip
+npm run check
+npm run build
+npm run verify:release
 ```
 
-The gender smoke run builds a synthetic ten-person image and checks the reported person, face, association, and label counts. `SMOKE_QUICK=1` skips video playback to shorten this capacity check. Unset those variables to run the regular browser smoke, which also samples video:
+Load `dist/` using the same Chrome steps above. Commands also work in PowerShell; use `npm.cmd` if your execution policy blocks `npm.ps1`. The model installer checks all thirteen pinned hashes before replacing files. For source-weight downloads, export instructions, and reproducibility details, see [models/README.md](models/README.md).
 
-```powershell
-Remove-Item Env:SMOKE_GENDER -ErrorAction SilentlyContinue
-Remove-Item Env:SMOKE_QUICK -ErrorAction SilentlyContinue
-node scripts/smoke.mjs
+## What you can control
+
+- **People:** female appearance, male appearance, everyone, or no one. Automatic labels estimate visible appearance; they do not establish identity or a person's gender. Unclassified people are covered by default.
+- **Images:** cover skin and hair, a whole silhouette with a face opening, or the whole silhouette including the face. Faces can be shown, blacked out, blurred, or pixelated where the selected coverage permits it.
+- **Videos:** whole-person silhouettes or faster conservative person boxes, with motion correction between sampled analyses. Select Smooth or Strict playback.
+- **Effects:** black, normal blur, and checkerboard blur, with independent intensity, grayscale, and mask-expansion controls. Skin and hair regions use black masks.
+- **Sites:** pause on the current site or maintain domain exceptions that also apply to its subdomains and embedded players.
+- **Advanced settings:** separate appearance models, image detection gates, optional skin-coverage thresholds, model resolution, CPU threads, and diagnostic outlines.
+
+<p><img src="docs/images/popup-en-dark.png" width="360" alt="English dark-theme popup"> <img src="docs/images/popup-ar-light.png" width="360" alt="Arabic popup with right-to-left controls"></p>
+
+## Examples
+
+| Goal | Settings |
+|---|---|
+| Cover everyone without depending on appearance classification | Set **Cover people → Everyone**, **Unclassified people → Censor** for both media types, and Images **Cover area → Whole body · same effect on face**. Use **Black** effects. |
+| Cover female-appearance skin and hair | Keep the default **Female appearance** filter, image skin/hair coverage, and **Unclassified people → Censor**. The default leaves faces shown. |
+| Blur whole people in images, pixelate them in videos | Choose an image whole-body mode and **Blur**; switch to **Videos** and choose **Checkerboard blur**. Adjust each intensity separately. |
+| Keep one website unrestricted | Click **Pause on this site**. Use **All settings → Websites** for a list such as `example.com` or a pasted HTTP(S) URL, then click **Save websites**. |
+| Diagnose an image that stays black | Open **All settings → Diagnostics**, inspect status, and retry the engine. Follow [troubleshooting](docs/TROUBLESHOOTING.md). |
+
+![Real local fixture with whole-person black coverage](docs/images/coverage-example.png)
+
+The coverage example is a local fixture with **Everyone** selected; it demonstrates rendering, not accuracy on unseen content. The popup/settings images use deterministic test status data. The photograph is from Ultralytics assets; see [fixture attribution](tests/fixtures/README.md).
+
+![Full settings](docs/images/settings-desktop.png)
+
+## Privacy
+
+Inference runs locally using packaged models. Sitr has no analytics, account, telemetry, or inference server. Frames, crops, masks, and temporary tracks remain in memory; settings and theme/language preferences are stored in Chrome's local extension storage.
+
+Sitr needs HTTP(S) host access to analyze page media and fetch unreadable images from their original URLs. Those requests may include existing cookies and are visible to the original website or CDN. A video CORS recovery check may reload a player once and briefly interrupt playback. See the full [privacy policy and permission explanation](PRIVACY.md).
+
+## Supported media and limitations
+
+Supported paths include regular images, readable sampled video, HTTP(S) iframes, media in shadow roots, and URL-based CSS background layers on HTML elements. Models prefer WebGPU with WASM fallback; cold startup can take seconds and performance depends on your device. Up to twenty detected people per analysis and two active videos are supported.
+
+Animated images, DRM/unreadable streams, canvas players, browser-internal pages, pseudo-element backgrounds, `image-set()`, and many picture-in-picture/native-fullscreen paths are unsupported. Protected media can stay black after acquisition or model failure. Blur and mosaic can leave shapes recognizable. Strict playback reduces stale-mask display but still cannot guarantee complete coverage; Smooth may display an older mask longer.
+
+This is a browser filtering aid. It does not interpret religious rules or determine whether content is permissible. Validate the settings on the content you use. [Detailed behavior](docs/USER_GUIDE.md), [architecture](docs/ARCHITECTURE.md), and [measured performance](BENCHMARK.md) explain the practical limits. Historical benchmark numbers are not a release-wide performance guarantee.
+
+## Development and releases
+
+```sh
+npm run check                  # TypeScript and unit tests; no models needed
+npx playwright install chromium
+npm run build                  # Requires the verified model bundle
+npm run test:browser            # UI, real extension, media and regression checks
+npm run release                # Checks, build, browser suite, ZIPs and SHA-256
 ```
 
-Other optional checks: set `SMOKE_GRID=1` for viewport-only processing on a 24-image page; `SMOKE_SUSTAINED=1` and `SMOKE_LONG_VIDEO=1` for a ten-second video sample; or `SMOKE_SCROLL=1`, `SMOKE_AUTH=1`, `SMOKE_WEBP=1`, `SMOKE_LABEL=1`, `SMOKE_VIDEO_LABEL=1`, `SMOKE_STATUS=1`, `SMOKE_THREAD_SETTING=1`, `SMOKE_RESOLUTION=1`, `SMOKE_PROFILE=1`, or `SMOKE_PAUSE=1` for the named behavior. `SMOKE_THREAD_SETTING=1` and `SMOKE_RESOLUTION=1` require `SMOKE_STATUS=1`. `node scripts/face-probe.mjs` checks YuNet boxes, nose points, and classifier integration in packaged Chromium; `node scripts/gender-probe.mjs` checks frontal and side-facing portrait crops.
+The release command writes the extension, corresponding source, and model ZIPs to `release/`. Publish all three together. [Validation results](docs/VALIDATION.md) · [Contribution guide](CONTRIBUTING.md) · [Release instructions](docs/RELEASING.md) · [Security reporting](SECURITY.md) · [Changelog](CHANGELOG.md).
 
-The smoke fixtures run in headless Chromium on local sample media. They do not test YouTube/social-site compatibility, ten unique people, extensive demographic or lighting variation, sustained hardware load, or zero-frame exposure. The included grid benchmark measures this computer's headless Chromium run, which may differ from regular Chrome and live websites.
+## License
 
-For a sustained image-throughput check, set `PERF_COUNT=100` and `PERF_DURATION_MINUTES=15` before running `node scripts/perf.mjs`. Each completed 100-image batch prints its throughput and latency; the final line summarizes the run.
+Copyright © 2026 Sitr contributors. Sitr's original source, documentation, and artwork are licensed under **GNU Affero General Public License version 3 only (`AGPL-3.0-only`)**. You may use, modify, and redistribute it under that license. There is no warranty. Read [LICENSE](LICENSE) and [corresponding-source instructions](SOURCE.md).
 
-## Limits and privacy
-
-Animated images, DRM or tainted video, canvas players, CSS backgrounds, closed shadow roots, restricted browser pages, and most picture-in-picture/native-fullscreen paths are unsupported. Unsupported acquisition or model failure keeps media black. Some warnings from ONNX Runtime or MediaPipe can be informational; repeated worker restarts or an `Analysis timed out` status are failures.
-
-Frames, face crops, masks, tracks, and temporary labels stay in memory and are not sent to a server or persisted. Settings are stored locally. Cross-origin image acquisition may fetch the source image through extension permissions so it can be analyzed locally.
-
-Model URLs, hashes, and provenance are listed in [models/artifacts.json](models/artifacts.json); license details are in [NOTICE.md](NOTICE.md). Ultralytics software/weights have separate [licensing terms](https://www.ultralytics.com/license). Review each artifact's terms before sharing a build.
+Bundled dependencies, pretrained models, and third-party test photographs retain their own licenses and attribution. See [NOTICE.md](NOTICE.md), [LICENSES/](LICENSES/), and [the pinned model manifest](models/artifacts.json). YOLO models use [Ultralytics' AGPL terms](https://www.ultralytics.com/license); including them is why this project uses GNU AGPL v3.

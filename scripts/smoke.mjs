@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Sitr contributors
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
@@ -45,6 +47,14 @@ try {
     worker.on('console', message => console.log('service worker:', message.text()));
   });
   const page = await context.newPage();
+  // Guarantee that this coverage fixture selects visible people. The shipping
+  // default can correctly exempt the clear male faces and produce no skin mask.
+  const fixtureWorker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
+  await page.goto(new URL('popup.html', fixtureWorker.url()).href);
+  await page.waitForFunction(() => !document.body.classList.contains('loading'));
+  await page.evaluate(async () => {
+    await chrome.runtime.sendMessage({ type: 'set-settings', patch: { filter: 'both' } });
+  });
   if (process.env.SMOKE_CPU_SEMANTIC === '1') {
     const extensionWorker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
     await extensionWorker.evaluate(async () => {
@@ -66,22 +76,55 @@ try {
       await chrome.runtime.sendMessage({ type: 'retry-engine', threads });
     }, Number(process.env.SMOKE_ONNX_THREADS));
   }
-  if (process.env.SMOKE_FACE === '1' || process.env.SMOKE_PERFORMANCE === '1' || process.env.SMOKE_LABEL === '1' || process.env.SMOKE_VIDEO_LABEL === '1') {
+  if (process.env.SMOKE_FACE === '1' || process.env.SMOKE_PERFORMANCE === '1' || process.env.SMOKE_LABEL === '1' || process.env.SMOKE_VIDEO_LABEL === '1' || process.env.SMOKE_EXPANSION === '1' || process.env.SMOKE_EFFECTS === '1' || process.env.SMOKE_FAST_VIDEO === '1' || process.env.SMOKE_REGION_FACE_EFFECT === '1' || process.env.SMOKE_STANDALONE_FACES === '1') {
     const extensionWorker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
     await extensionWorker.evaluate(async flags => {
+      await new Promise(resolve => setTimeout(resolve, 500));
       const current = (await chrome.storage.local.get('settings')).settings || {};
-      await chrome.storage.local.set({ settings: { ...current,
+      const patch = {
         ...(flags.face ? { faceAssociation: true } : {}),
         ...(flags.performance ? { performance: 'performance' } : {}),
-        ...(flags.manualLabel ? { automaticGender: false } : {}),
-        revision: (current.revision || 0) + 1 } });
+        ...(flags.manualLabel ? { automaticGender: false, filter: 'female' } : {}),
+        ...(flags.expansion ? { filter: 'both', automaticGender: false } : {}),
+        ...(flags.fastVideo ? { videoDetector: 'fast-box', filter: 'both' } : {}),
+        ...(flags.regionFace ? { filter: 'both', automaticGender: false, imageCoverage: 'regions', imageRegionFaceEffect: 'blur',
+          imageFaceEffectIntensity: 24, imageFaceEffectGrayscale: false } : {}),
+        ...(flags.standaloneFaces ? { filter: 'both', automaticGender: true, imageGenderModel: 'face',
+          imageCoverage: 'regions', imageRegionFaceEffect: 'blur', imageDetectionGate: 'face', yoloConfidence: 0.99 } : {}),
+        ...(flags.effects ? { filter: 'both', automaticGender: false, imageCoverage: 'whole-body',
+          imageWholeBodyEffect: flags.normalVideo ? 'checkerboard' : 'blur', imageEffectIntensity: 24, imageEffectGrayscale: true,
+          videoEffect: flags.normalVideo ? 'blur' : 'checkerboard', videoEffectIntensity: 24, videoEffectGrayscale: true } : {}),
+      };
+      const saved = { ...current, ...patch, revision: (current.revision || 0) + 1 };
+      await chrome.storage.local.set({ settings: saved });
+      if (flags.effects && (saved.imageCoverage !== 'whole-body' || saved.videoEffect !== (flags.normalVideo ? 'blur' : 'checkerboard')))
+        throw new Error('Effect smoke settings were not saved');
     }, { face: process.env.SMOKE_FACE === '1', performance: process.env.SMOKE_PERFORMANCE === '1',
-      manualLabel: process.env.SMOKE_LABEL === '1' || process.env.SMOKE_VIDEO_LABEL === '1' });
+      manualLabel: process.env.SMOKE_LABEL === '1' || process.env.SMOKE_VIDEO_LABEL === '1',
+      expansion: process.env.SMOKE_EXPANSION === '1', effects: process.env.SMOKE_EFFECTS === '1',
+      regionFace: process.env.SMOKE_REGION_FACE_EFFECT === '1',
+      standaloneFaces: process.env.SMOKE_STANDALONE_FACES === '1',
+      normalVideo: process.env.SMOKE_NORMAL_VIDEO === '1', fastVideo: process.env.SMOKE_FAST_VIDEO === '1' });
   }
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
+  // Observe the exact blackout removal, before a deferred animation-frame draw
+  // could hide a reveal-before-mask regression from a later screenshot.
+  await page.evaluate(() => {
+    window.firstBusRevealPixels = null;
+    const observer = new MutationObserver(records => {
+      const image = document.querySelector('#bus');
+      if (window.firstBusRevealPixels !== null || image.hasAttribute('data-local-media-censor-pending') ||
+          !records.some(record => record.target === image && record.oldValue !== null)) return;
+      const canvas = document.querySelector('canvas[data-local-media-censor-for="bus"]');
+      const pixels = canvas?.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+      window.firstBusRevealPixels = pixels ? pixels.filter((value, index) => index % 4 === 3 && value > 0).length : 0;
+    });
+    observer.observe(document.querySelector('#bus'), { attributes: true, attributeOldValue: true,
+      attributeFilter: ['data-local-media-censor-pending'] });
+  });
   if (process.env.SMOKE_GENDER === '1') {
     await page.evaluate(async () => {
       const source = document.querySelector('#bus');
@@ -147,6 +190,22 @@ try {
       }, 100);
     }));
   } else if (process.env.SMOKE_QUICK !== '1') await page.waitForTimeout(10000);
+  await page.waitForFunction(standalone => {
+    const sample = document.querySelector('#sample');
+    const bus = document.querySelector('#bus');
+    return (standalone || sample?.dataset.localMediaCensorStatus === 'protected' &&
+      !sample.hasAttribute('data-local-media-censor-pending')) &&
+      bus?.dataset.localMediaCensorStatus !== 'analyzing' &&
+      !bus?.hasAttribute('data-local-media-censor-pending');
+  }, process.env.SMOKE_STANDALONE_FACES === '1', { timeout: 60000 }).catch(async error => {
+    console.log('Image wait diagnostic:', await page.evaluate(() => ['sample', 'bus'].map(id => {
+      const image = document.getElementById(id);
+      return { id, status: image?.dataset.localMediaCensorStatus, pending: image?.hasAttribute('data-local-media-censor-pending'),
+        error: image?.dataset.localMediaCensorError, gender: image?.dataset.localMediaCensorGender,
+        timings: image?.dataset.localMediaCensorTimingsMs };
+    })));
+    throw error;
+  });
   const final = await page.locator('#sample').evaluate(img => ({ protected: img.hasAttribute('data-local-media-censor-pending'), filter: getComputedStyle(img).filter, status: img.getAttribute('data-local-media-censor-status'), overlays: document.querySelectorAll('[data-local-media-censor-overlay]').length }));
   const busState = await page.locator('#bus').evaluate(img => {
     const canvas = document.querySelector('canvas[data-local-media-censor-for="bus"]');
@@ -157,7 +216,46 @@ try {
     return { protected: img.hasAttribute('data-local-media-censor-pending'), status: img.getAttribute('data-local-media-censor-status'), maskedPixels,
       acquireMs: img.getAttribute('data-local-media-censor-acquire-ms'), latencyMs: img.getAttribute('data-local-media-censor-latency-ms'), timingsMs: img.getAttribute('data-local-media-censor-timings-ms'), gender: img.getAttribute('data-local-media-censor-gender') };
   });
+  if (process.env.SMOKE_REGION_FACE_EFFECT === '1') {
+    const facePixels = await page.locator('canvas[data-local-media-censor-for="bus"]').evaluate(canvas => {
+      const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+      let colored = 0;
+      for (let i = 0; i < pixels.length; i += 4)
+        if (pixels[i + 3] > 64 && pixels[i] + pixels[i + 1] + pixels[i + 2] > 30) colored++;
+      return colored;
+    });
+    if (facePixels < 100 || JSON.parse(busState.timingsMs || '{}').semanticBackend === 'skipped')
+      throw new Error(`Skin-and-hair face blur did not render: ${facePixels} colored pixels`);
+    console.log('Skin-and-hair face blur rendered:', facePixels);
+  }
+  if (process.env.SMOKE_STANDALONE_FACES === '1') {
+    const gender = JSON.parse(busState.gender || '{}');
+    if (gender.people !== 0 || gender.faces < 1 || gender.associated !== 0 ||
+        gender.faceGenderAttempts !== gender.faces || busState.maskedPixels < 100)
+      throw new Error(`Unmatched faces were not sent to the gender classifier: ${JSON.stringify(gender)}`);
+    const extensionWorker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
+    const popup = await context.newPage();
+    await popup.goto(new URL('popup.html', extensionWorker.url()).href);
+    await popup.locator('#imageDetectionGate').selectOption('person');
+    await popup.waitForFunction(async () => (await chrome.storage.local.get('settings')).settings.imageDetectionGate === 'person');
+    await page.waitForFunction(() => {
+      const canvas = document.querySelector('canvas[data-local-media-censor-for="bus"]');
+      if (!canvas) return false;
+      const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+      for (let i = 3; i < pixels.length; i += 4) if (pixels[i]) return false;
+      return true;
+    }, null, { timeout: 15000 });
+    console.log('Unmatched face classification and person-required gate verified:', gender);
+    await popup.close();
+  }
   const videoState = await page.locator('#clip').evaluate(video => ({ protected: video.hasAttribute('data-local-media-censor-pending'), status: video.getAttribute('data-local-media-censor-status'), latencyMs: video.getAttribute('data-local-media-censor-latency-ms'), timingsMs: video.getAttribute('data-local-media-censor-timings-ms'), gender: video.getAttribute('data-local-media-censor-gender'), sequence: video.getAttribute('data-local-media-censor-sequence'), captureSequence: video.getAttribute('data-local-media-censor-capture-sequence'), captureMs: video.getAttribute('data-local-media-censor-capture-ms'), motionError: video.getAttribute('data-local-media-censor-motion-error'), errors: video.getAttribute('data-local-media-censor-video-errors'), lastError: video.getAttribute('data-local-media-censor-last-error'), currentTime: video.currentTime, readyState: video.readyState }));
+  if (process.env.SMOKE_FAST_VIDEO === '1') {
+    const timings = JSON.parse(videoState.timingsMs || '{}');
+    if (!String(timings.backend).includes('fast-box') || timings.yoloSize !== 256 || Number(videoState.sequence) < 1)
+      throw new Error(`Fast video detector did not analyze a playing frame: ${JSON.stringify(videoState)}`);
+    console.log('Fast video detector verified:', { backend: timings.backend, personMs: timings.person,
+      personRunMs: timings.personRun, personDecodeMs: timings.personDecode, sequence: videoState.sequence });
+  }
   const motionFrame = page.frames().find(frame => frame.url().endsWith('/motion.html'));
   const motionHost = motionFrame ? await motionFrame.evaluate(() => ({ ...document.body.dataset })) : null;
   console.log(JSON.stringify({ initial, final, busState, videoState, motionHost, errors, frames: page.frames().map(frame => frame.url()), serviceWorkers: serviceWorkers.concat(context.serviceWorkers().map(worker => worker.url())) }, null, 2));
@@ -193,11 +291,16 @@ try {
       throw new Error('Side-facing woman was not labelled female end-to-end');
     }
   }
-  if (final.protected || final.status !== 'protected') throw new Error('No-person image failed to resolve');
+  if (final.protected || (process.env.SMOKE_STANDALONE_FACES === '1'
+    ? !['off', 'protected'].includes(final.status) : final.status !== 'protected'))
+    throw new Error('No-person image failed to resolve');
   const busGender = busState.gender ? JSON.parse(busState.gender) : null;
   const expectedMaleExemption = busGender?.accepted >= 2 && busState.status === 'protected';
   if (!['protected', 'uncertain-person', 'unassigned-region'].includes(busState.status) || busState.protected ||
       (!expectedMaleExemption && busState.maskedPixels === 0)) throw new Error('Multi-person image did not reach a valid protected or exempt state');
+  const firstRevealPixels = await page.evaluate(() => window.firstBusRevealPixels);
+  if (busState.maskedPixels > 0 && !(firstRevealPixels > 0)) throw new Error('Image was revealed before its first mask draw or the reveal was not observed');
+  console.log('First image reveal mask pixels:', firstRevealPixels);
   if (process.env.SMOKE_GENDER === '1') {
     await page.waitForTimeout(process.env.SMOKE_QUICK === '1' ? 15000 : 25000);
     const group = await page.locator('#group10').evaluate(image => ({
@@ -363,6 +466,122 @@ try {
     }, undefined, { timeout: 20000 });
     console.log('Source replacement reanalyzed and revealed the new no-person image.');
   }
+  if (process.env.SMOKE_EXPANSION === '1') {
+    await page.locator('#clip').evaluate(video => video.pause());
+    const covered = async id => page.locator(`canvas[data-local-media-censor-for="${id}"]`).evaluate(canvas => {
+      const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+      let count = 0;
+      for (let i = 3; i < data.length; i += 4) if (data[i]) count++;
+      return count;
+    });
+    const beforeImage = await covered('bus');
+    const beforeVideo = await covered('clip');
+    if (!beforeImage || !beforeVideo) throw new Error('Expansion fixture needs both image and video masks');
+    const extensionWorker = context.serviceWorkers()[0];
+    const popup = await context.newPage();
+    await popup.goto(new URL('popup.html', extensionWorker.url()).href);
+    for (const [field, value] of [['imageExpansion', '8'], ['videoExpansion', '12']]) {
+      await popup.locator(`#${field}`).evaluate((input, next) => {
+        input.value = next;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }, value);
+      await popup.waitForFunction(([name, next]) => document.getElementById(`${name}Value`)?.textContent === `${next} px`, [field, value]);
+    }
+    await page.waitForFunction(([image, video]) => {
+      const pixels = id => {
+        const canvas = document.querySelector(`canvas[data-local-media-censor-for="${id}"]`);
+        const data = canvas?.getContext('2d')?.getImageData(0, 0, canvas.width, canvas.height).data;
+        if (!data) return 0;
+        let count = 0;
+        for (let i = 3; i < data.length; i += 4) if (data[i]) count++;
+        return count;
+      };
+      return pixels('bus') > image && pixels('clip') > video;
+    }, [beforeImage, beforeVideo], { timeout: 10000 });
+    const afterImage = await covered('bus');
+    const afterVideo = await covered('clip');
+    const saved = await extensionWorker.evaluate(async () => (await chrome.storage.local.get('settings')).settings);
+    if (saved.imageExpansion !== 8 || saved.videoExpansion !== 12) throw new Error('Expansion sliders did not persist');
+    console.log('Expansion sliders enlarged existing masks:', { beforeImage, afterImage, beforeVideo, afterVideo });
+    await popup.close();
+  }
+  if (process.env.SMOKE_EFFECTS === '1') {
+    const sampleEffect = async id => page.locator(`canvas[data-local-media-censor-for="${id}"]`).evaluate(canvas => {
+      const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+      let covered = 0, colored = 0, grayscale = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] < 64) continue;
+        covered++;
+        if (data[i] + data[i + 1] + data[i + 2] > 30) {
+          colored++;
+          if (Math.abs(data[i] - data[i + 1]) <= 3 && Math.abs(data[i + 1] - data[i + 2]) <= 3) grayscale++;
+        }
+      }
+      return { covered, colored, grayscale };
+    });
+    await page.waitForFunction(() => {
+      const ids = ['bus', 'clip'];
+      return ids.every(id => {
+        const canvas = document.querySelector(`canvas[data-local-media-censor-for="${id}"]`);
+        if (!canvas) return false;
+        const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+        for (let i = 0; i < data.length; i += 4) if (data[i + 3] > 64 && data[i] + data[i + 1] + data[i + 2] > 30) return true;
+        return false;
+      });
+    }, null, { timeout: 15000 });
+    const imageEffect = await sampleEffect('bus');
+    const videoEffect = await sampleEffect('clip');
+    const imageFaces = JSON.parse(await page.locator('#bus').getAttribute('data-local-media-censor-gender') || '{}');
+    if (imageEffect.colored < 100 || videoEffect.colored < 100 ||
+        imageEffect.grayscale < imageEffect.colored * 0.9 || videoEffect.grayscale < videoEffect.colored * 0.9 ||
+        imageFaces.associated < 1) throw new Error('Whole-body blur or associated face opening failed');
+    const extensionWorker = context.serviceWorkers()[0];
+    const popup = await context.newPage();
+    await popup.goto(new URL('popup.html', extensionWorker.url()).href);
+    if (!await popup.locator('#imageWholeBodyControls').isVisible() ||
+        !await popup.locator('#imageEffectOptions').isVisible() || !await popup.locator('#videoEffectOptions').isVisible())
+      throw new Error('Whole-body effect controls were not visible');
+    if (process.env.SMOKE_IMAGE_FACE_EFFECT === '1') {
+      for (const effect of ['checkerboard', 'blur']) {
+        await popup.locator('#imageWholeBodyFaceEffect').selectOption(effect);
+        await popup.waitForFunction(async expected => (await chrome.storage.local.get('settings')).settings.imageWholeBodyFaceEffect === expected, effect);
+        await page.waitForFunction(() => {
+          const canvas = document.querySelector('canvas[data-local-media-censor-for="bus"]');
+          if (!canvas) return false;
+          const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+          let colored = 0;
+          for (let i = 0; i < pixels.length; i += 4)
+            if (pixels[i + 3] > 64 && (Math.abs(pixels[i] - pixels[i + 1]) > 3 || Math.abs(pixels[i + 1] - pixels[i + 2]) > 3)) colored++;
+          return colored > 100;
+        }, null, { timeout: 15000 });
+        console.log('Whole-body face effect rendered:', effect, await sampleEffect('bus'));
+      }
+      if (!await popup.locator('#imageFaceEffectOptions').isVisible()) throw new Error('Face intensity controls were not visible');
+      await popup.locator('#imageCoverage').selectOption('whole-body-face');
+      if (await popup.locator('#imageWholeBodyFaceControl').isVisible()) throw new Error('Full-body-with-face still shows a separate face control');
+    }
+    if (process.env.SMOKE_EFFECT_SCREENSHOT) await popup.screenshot({ path: process.env.SMOKE_EFFECT_SCREENSHOT, fullPage: true });
+    console.log('Whole-body effects rendered with grayscale:', { imageEffect, videoEffect, imageFaces });
+    await popup.close();
+  }
+  if (process.env.SMOKE_FAST_TOGGLE === '1') {
+    await page.locator('#clip').evaluate(video => { video.loop = true; void video.play(); });
+    const worker = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker');
+    const popup = await context.newPage();
+    await popup.goto(new URL('popup.html', worker.url()).href);
+    for (const [choice, expected] of [['segment', 'webgpu'], ['fast-box', 'webgpu-fast-box']]) {
+      await popup.locator('#videoDetector').selectOption(choice);
+      await page.waitForFunction(backend => {
+        try { return JSON.parse(document.querySelector('#clip')?.getAttribute('data-local-media-censor-timings-ms') || '{}').backend === backend; }
+        catch { return false; }
+      }, expected, { timeout: 30000 });
+      const stored = await worker.evaluate(() => chrome.storage.local.get('settings'));
+      if (stored.settings.videoDetector !== choice) throw new Error('Video detector choice did not persist');
+    }
+    console.log('Popup video detector toggle switched both packaged models.');
+    await popup.close();
+  }
   if (process.env.SMOKE_SETTINGS === '1') {
     const extensionWorker = context.serviceWorkers()[0];
     await extensionWorker.evaluate(async () => {
@@ -436,29 +655,39 @@ try {
       return count;
     });
     const beforeLabel = await countMask();
-    const point = await videoOverlay.evaluate(canvas => {
+    const points = await videoOverlay.evaluate(canvas => {
       const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-      let best = { distance: Infinity, x: 0, y: 0 };
-      for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
-        if (!data[(y * canvas.width + x) * 4 + 3]) continue;
-        const distance = (x - canvas.width / 2) ** 2 + (y - canvas.height / 2) ** 2;
-        if (distance < best.distance) best = { distance, x, y };
+      const candidates = [];
+      for (let y = 12; y < canvas.height - 12; y += 4) for (let x = 12; x < canvas.width - 12; x += 4) {
+        const covered = (px, py) => data[(py * canvas.width + px) * 4 + 3] > 200;
+        if (!covered(x, y) || !covered(x - 8, y) || !covered(x + 8, y) ||
+            !covered(x, y - 8) || !covered(x, y + 8)) continue;
+        candidates.push({ distance: (x - canvas.width / 2) ** 2 + (y - canvas.height / 2) ** 2, x, y });
       }
+      candidates.sort((a, b) => a.distance - b.distance);
       const rect = canvas.getBoundingClientRect();
-      return { x: best.x * rect.width / canvas.width, y: best.y * rect.height / canvas.height };
+      const chosen = [];
+      for (const point of candidates) {
+        if (chosen.every(prior => (prior.x - point.x) ** 2 + (prior.y - point.y) ** 2 > 32 ** 2)) chosen.push(point);
+        if (chosen.length === 8) break;
+      }
+      return chosen.map(point => ({ x: point.x * rect.width / canvas.width,
+        y: point.y * rect.height / canvas.height }));
     });
-    await videoOverlay.click({ position: point });
     const menu = page.locator('[data-local-media-censor-label-menu]');
+    for (const point of points) {
+      await videoOverlay.click({ position: point });
+      if (await menu.isVisible()) break;
+    }
     await menu.waitFor({ timeout: 3000 });
     await menu.locator('select').nth(1).selectOption('male');
     await menu.locator('button').click();
     await page.waitForFunction(() => document.querySelector('#clip')?.dataset.localMediaCensorLabelOutcome === 'applied', undefined, { timeout: 5000 });
-    await page.waitForTimeout(1500);
+    const immediateLabel = await countMask();
+    await page.waitForTimeout(500);
     const afterLabel = await countMask();
-    await page.waitForTimeout(1500);
-    const laterLabel = await countMask();
-    console.log('Playing-video male label mask pixels:', { beforeLabel, afterLabel, laterLabel });
-    if (afterLabel >= beforeLabel || laterLabel >= beforeLabel) throw new Error('Playing-video male label did not retain an exemption');
+    console.log('Playing-video male label mask pixels:', { beforeLabel, immediateLabel, afterLabel });
+    if (immediateLabel >= beforeLabel || afterLabel >= beforeLabel) throw new Error('Playing-video male label did not retain an exemption before the short fixture loops');
   }
   if (process.env.SMOKE_PAUSE === '1') {
     await page.waitForFunction(() => !document.querySelector('#clip')?.hasAttribute('data-local-media-censor-pending'), undefined, { timeout: 5000 });

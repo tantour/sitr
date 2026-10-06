@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Sitr contributors
 export type Label = 'female' | 'male' | 'unknown';
 export type FilterMode = 'female' | 'male' | 'both' | 'off';
 export type UnknownPolicy = 'selected' | 'allow';
@@ -7,19 +9,51 @@ export type YoloResolution = 'auto' | 256 | 320 | 416;
 export type YunetResolution = 256 | 320 | 416;
 export type FaceCaptureResolution = 320 | 416 | 512 | 640;
 export type FaceAssociationMode = 'overlap' | 'center';
+export type VideoPlayback = 'smooth' | 'strict';
+export type VideoDetector = 'segment' | 'fast-box';
+export type GenderModel = 'face' | 'body-intel' | 'body-paddle' | 'face-intel' | 'face-paddle';
+export type ImageCoverage = 'regions' | 'whole-body' | 'whole-body-face';
+export type WholeBodyEffect = 'black' | 'blur' | 'checkerboard';
+export type FaceEffect = 'show' | WholeBodyEffect;
+export type ImageDetectionGate = 'any' | 'face' | 'person' | 'either' | 'both';
 
 export interface Settings {
-  schemaVersion: 8;
+  schemaVersion: 16;
   revision: number;
   enabled: boolean;
   images: boolean;
   videos: boolean;
+  videoPlayback: VideoPlayback;
+  videoDetector: VideoDetector;
   filter: FilterMode;
-  unknown: UnknownPolicy;
+  imageUnknown: UnknownPolicy;
+  videoUnknown: UnknownPolicy;
   bodySkin: boolean;
   hair: boolean;
   faceSkin: boolean;
+  imageCoverage: ImageCoverage;
+  imageDetectionGate: ImageDetectionGate;
+  imageSkinThresholdEnabled: boolean;
+  imageSkinThresholdPercent: number;
+  imageSkinThresholdIncludeFace: boolean;
+  imageGroupSkinThresholdEnabled: boolean;
+  imageGroupSkinThresholdPercent: number;
+  imageGroupSkinPeopleLimit: number;
+  imageWholeBodyEffect: WholeBodyEffect;
+  imageRegionFaceEffect: FaceEffect;
+  imageWholeBodyFaceEffect: FaceEffect;
+  imageFaceEffectIntensity: number;
+  imageFaceEffectGrayscale: boolean;
+  videoEffect: WholeBodyEffect;
+  imageEffectIntensity: number;
+  videoEffectIntensity: number;
+  imageEffectGrayscale: boolean;
+  videoEffectGrayscale: boolean;
+  imageExpansion: number;
+  videoExpansion: number;
   automaticGender: boolean;
+  imageGenderModel: GenderModel;
+  videoGenderModel: GenderModel;
   faceAssociation: boolean;
   faceAssociationMode: FaceAssociationMode;
   debugOverlay: boolean;
@@ -42,17 +76,42 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  schemaVersion: 8,
+  schemaVersion: 16,
   revision: 0,
   enabled: true,
   images: true,
   videos: true,
+  videoPlayback: 'smooth',
+  videoDetector: 'segment',
   filter: 'female',
-  unknown: 'selected',
+  imageUnknown: 'selected',
+  videoUnknown: 'selected',
   bodySkin: true,
   hair: true,
   faceSkin: false,
+  imageCoverage: 'regions',
+  imageDetectionGate: 'any',
+  imageSkinThresholdEnabled: false,
+  imageSkinThresholdPercent: 80,
+  imageSkinThresholdIncludeFace: false,
+  imageGroupSkinThresholdEnabled: false,
+  imageGroupSkinThresholdPercent: 70,
+  imageGroupSkinPeopleLimit: 3,
+  imageWholeBodyEffect: 'black',
+  imageRegionFaceEffect: 'show',
+  imageWholeBodyFaceEffect: 'show',
+  imageFaceEffectIntensity: 24,
+  imageFaceEffectGrayscale: false,
+  videoEffect: 'black',
+  imageEffectIntensity: 24,
+  videoEffectIntensity: 24,
+  imageEffectGrayscale: false,
+  videoEffectGrayscale: false,
+  imageExpansion: 1,
+  videoExpansion: 4,
   automaticGender: true,
+  imageGenderModel: 'face',
+  videoGenderModel: 'face',
   faceAssociation: false,
   faceAssociationMode: 'overlap',
   debugOverlay: false,
@@ -84,22 +143,63 @@ export const ENGINE = {
   minOwnedPixels: 64,
   maxAmbiguousFraction: 0.1,
   ownershipMargin: 0.15,
-  lostTrackMs: 1000,
+  lostTrackMs: 2000,
   maxActiveVideos: 2,
   modes: {
-    performance: { input: 256, videoInput: 256, initialHz: 3, maxHz: 4 },
-    balanced: { input: 320, videoInput: 256, initialHz: 4, maxHz: 6 },
-    quality: { input: 416, videoInput: 320, initialHz: 6, maxHz: 8 },
+    performance: { input: 256, videoInput: 256, initialHz: 4, maxHz: 4 },
+    balanced: { input: 320, videoInput: 256, initialHz: 6, maxHz: 6 },
+    quality: { input: 416, videoInput: 320, initialHz: 8, maxHz: 8 },
   },
 } as const;
+
+export function normalizeSiteException(value: string): string | undefined {
+  const input = value.trim().toLowerCase().replace(/^\*\./, '');
+  if (!input || (/^[a-z][a-z\d+.-]*:/i.test(input) && !/^https?:\/\//.test(input))) return;
+  try {
+    const host = new URL(/^https?:\/\//.test(input) ? input : `https://${input}`).hostname
+      .replace(/\.$/, '').replace(/^www\./, '');
+    if (!/^[a-z\d](?:[a-z\d.-]*[a-z\d])?$/.test(host) || host.includes('..')) return;
+    return host;
+  } catch { return; }
+}
+
+export function siteIsExcepted(hostname: string, exceptions: string[]): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, '');
+  return exceptions.some(site => host === site || host.endsWith(`.${site}`));
+}
 
 export function normalizeSettings(value: unknown): Settings {
   const raw = (value && typeof value === 'object' ? value : {}) as Partial<Settings>;
   const merged = { ...DEFAULT_SETTINGS, ...raw };
-  merged.schemaVersion = 8;
+  merged.schemaVersion = 16;
+  for (const field of ['imageSkinThresholdEnabled', 'imageSkinThresholdIncludeFace', 'imageGroupSkinThresholdEnabled'] as const)
+    merged[field] = merged[field] === true;
+  for (const field of ['imageSkinThresholdPercent', 'imageGroupSkinThresholdPercent'] as const) {
+    const value = Number(merged[field]);
+    merged[field] = Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : DEFAULT_SETTINGS[field];
+  }
+  const peopleLimit = Number(merged.imageGroupSkinPeopleLimit);
+  merged.imageGroupSkinPeopleLimit = Number.isFinite(peopleLimit)
+    ? Math.max(1, Math.min(ENGINE.maxPersonsPerFrame - 1, Math.round(peopleLimit))) : DEFAULT_SETTINGS.imageGroupSkinPeopleLimit;
   if (!['female', 'male', 'both', 'off'].includes(merged.filter)) merged.filter = DEFAULT_SETTINGS.filter;
-  if (!['selected', 'allow'].includes(merged.unknown)) merged.unknown = DEFAULT_SETTINGS.unknown;
-  if ((raw as { unknown?: string }).unknown === 'whole') merged.unknown = 'selected';
+  const legacyUnknown = (raw as Partial<Settings> & { unknown?: string }).unknown;
+  const migratedUnknown = legacyUnknown === 'allow' ? 'allow' : 'selected';
+  for (const field of ['imageUnknown', 'videoUnknown'] as const) {
+    const value = raw[field] ?? migratedUnknown;
+    merged[field] = value === 'allow' || value === 'selected' ? value : DEFAULT_SETTINGS[field];
+  }
+  delete (merged as Settings & { unknown?: string }).unknown;
+  if (!['smooth', 'strict'].includes(merged.videoPlayback)) merged.videoPlayback = DEFAULT_SETTINGS.videoPlayback;
+  if (!['segment', 'fast-box'].includes(merged.videoDetector)) merged.videoDetector = DEFAULT_SETTINGS.videoDetector;
+  for (const field of ['imageGenderModel', 'videoGenderModel'] as const)
+    if (!['face', 'body-intel', 'body-paddle', 'face-intel', 'face-paddle'].includes(merged[field])) merged[field] = DEFAULT_SETTINGS[field];
+  if (!['regions', 'whole-body', 'whole-body-face'].includes(merged.imageCoverage)) merged.imageCoverage = DEFAULT_SETTINGS.imageCoverage;
+  if (!['any', 'face', 'person', 'either', 'both'].includes(merged.imageDetectionGate)) merged.imageDetectionGate = DEFAULT_SETTINGS.imageDetectionGate;
+  if (raw.imageRegionFaceEffect === undefined && raw.faceSkin === true) merged.imageRegionFaceEffect = 'black';
+  for (const field of ['imageRegionFaceEffect', 'imageWholeBodyFaceEffect'] as const)
+    if (!['show', 'black', 'blur', 'checkerboard'].includes(merged[field])) merged[field] = DEFAULT_SETTINGS[field];
+  for (const field of ['imageWholeBodyEffect', 'videoEffect'] as const)
+    if (!['black', 'blur', 'checkerboard'].includes(merged[field])) merged[field] = DEFAULT_SETTINGS[field];
   if (!['performance', 'balanced', 'quality'].includes(merged.performance)) merged.performance = DEFAULT_SETTINGS.performance;
   const requestedThreads = Number(merged.onnxThreads);
   merged.onnxThreads = merged.onnxThreads === 'auto' ? 'auto'
@@ -113,6 +213,17 @@ export function normalizeSettings(value: unknown): Settings {
   merged.yunetSize = [256, 320, 416].includes(yunetSize) ? yunetSize as YunetResolution : 320;
   const faceCaptureSize = Number(merged.faceCaptureSize);
   merged.faceCaptureSize = [320, 416, 512, 640].includes(faceCaptureSize) ? faceCaptureSize as FaceCaptureResolution : 640;
+  for (const field of ['imageExpansion', 'videoExpansion'] as const) {
+    const value = Number(merged[field]);
+    merged[field] = Number.isFinite(value) ? Math.max(0, Math.min(24, Math.round(value))) : DEFAULT_SETTINGS[field];
+  }
+  for (const field of ['imageEffectIntensity', 'videoEffectIntensity', 'imageFaceEffectIntensity'] as const) {
+    const value = Number(merged[field]);
+    merged[field] = Number.isFinite(value) ? Math.max(8, Math.min(64, Math.round(value))) : DEFAULT_SETTINGS[field];
+  }
+  merged.imageEffectGrayscale = merged.imageEffectGrayscale === true;
+  merged.videoEffectGrayscale = merged.videoEffectGrayscale === true;
+  merged.imageFaceEffectGrayscale = merged.imageFaceEffectGrayscale === true;
   if (!['overlap', 'center'].includes(merged.faceAssociationMode)) merged.faceAssociationMode = DEFAULT_SETTINGS.faceAssociationMode;
   for (const key of ['faceDetectionConfidence', 'genderConfidence', 'smallFaceConfidence', 'faceCoverage', 'centerMaskConfidence', 'yoloConfidence'] as const) {
     const value = Number(merged[key]);
@@ -127,7 +238,9 @@ export function normalizeSettings(value: unknown): Settings {
   delete (merged as Settings & { highExposure?: unknown; highSkinThreshold?: unknown; highSkinPeopleLimit?: unknown }).highExposure;
   delete (merged as Settings & { highExposure?: unknown; highSkinThreshold?: unknown; highSkinPeopleLimit?: unknown }).highSkinThreshold;
   delete (merged as Settings & { highExposure?: unknown; highSkinThreshold?: unknown; highSkinPeopleLimit?: unknown }).highSkinPeopleLimit;
-  merged.siteExceptions = Array.isArray(merged.siteExceptions) ? merged.siteExceptions.filter((x): x is string => typeof x === 'string').map(x => x.trim().toLowerCase()).filter(Boolean).slice(0, 100) : [];
+  merged.siteExceptions = Array.isArray(merged.siteExceptions)
+    ? [...new Set(merged.siteExceptions.filter((x): x is string => typeof x === 'string')
+      .map(normalizeSiteException).filter((host): host is string => !!host))].slice(0, 100) : [];
   return merged;
 }
 
@@ -140,4 +253,8 @@ export function resolveOnnxThreads(setting: OnnxThreads, logicalCores: number): 
 export function resolveYoloSize(settings: Settings, kind: 'image' | 'video'): 256 | 320 | 416 {
   const selected = kind === 'image' ? settings.yoloImageSize : settings.yoloVideoSize;
   return selected === 'auto' ? ENGINE.modes[settings.performance][kind === 'image' ? 'input' : 'videoInput'] : selected;
+}
+
+export function resolvePersonSize(settings: Settings, kind: 'image' | 'video'): 256 | 320 | 416 {
+  return kind === 'video' && settings.videoDetector === 'fast-box' ? 256 : resolveYoloSize(settings, kind);
 }

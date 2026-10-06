@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Sitr contributors
 export class SemanticClient {
   private worker?: Worker;
   private nextId = 0;

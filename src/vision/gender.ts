@@ -1,10 +1,11 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Sitr contributors
 import { createOnnxSession, ort, type OnnxBackend } from './ortRuntime';
 import { ENGINE } from '../config/settings';
 import type { Rect } from '../state/contracts';
+import { normalizeRgb } from './normalization';
 
 const FACE_SIDE = 128;
-const MEAN = [0.485, 0.456, 0.406];
-const STD = [0.229, 0.224, 0.225];
 export type GenderEstimate = { label: 'male' | 'female'; confidence: number } | undefined;
 
 /** FastFace Large RGB face crops. Age outputs are deliberately ignored. */
@@ -13,6 +14,7 @@ export class AppearanceGenderClassifier {
   private backend: OnnxBackend = 'wasm';
   private source = new OffscreenCanvas(1, 1);
   private crop = new OffscreenCanvas(FACE_SIDE, FACE_SIDE);
+  private input = new Float32Array(0);
   private lastTimings = { preprocess: 0, run: 0, decode: 0 };
   constructor(private readonly preferredBackend: OnnxBackend = 'wasm', private readonly threads?: number) {}
 
@@ -40,7 +42,9 @@ export class AppearanceGenderClassifier {
     if (!sourceContext || !cropContext) throw new Error('Gender crop canvas unavailable');
     sourceContext.putImageData(new ImageData(new Uint8ClampedArray(rgba.buffer as ArrayBuffer, rgba.byteOffset, rgba.byteLength), size, size), 0, 0);
     const pixels = FACE_SIDE * FACE_SIDE;
-    const input = new Float32Array(boxes.length * 3 * pixels);
+    const inputLength = boxes.length * 3 * pixels;
+    if (this.input.length < inputLength) this.input = new Float32Array(inputLength);
+    const input = this.input.subarray(0, inputLength);
     for (const [faceIndex, box] of boxes.entries()) {
       // Match FastFace's 20% face-crop margin. A wider crop can make profile
       // faces mostly hair/background and produced wrong labels in our fixtures.
@@ -52,27 +56,25 @@ export class AppearanceGenderClassifier {
       cropContext.drawImage(this.source, centerX - side / 2, centerY - side / 2, side, side, 0, 0, FACE_SIDE, FACE_SIDE);
       const crop = cropContext.getImageData(0, 0, FACE_SIDE, FACE_SIDE).data;
       const start = faceIndex * 3 * pixels;
-      for (let pixel = 0; pixel < pixels; pixel++) {
-        input[start + pixel] = (crop[pixel * 4] / 255 - MEAN[0]) / STD[0];
-        input[start + pixels + pixel] = (crop[pixel * 4 + 1] / 255 - MEAN[1]) / STD[1];
-        input[start + 2 * pixels + pixel] = (crop[pixel * 4 + 2] / 255 - MEAN[2]) / STD[2];
-      }
+      normalizeRgb(crop, input, start);
     }
     const runAt = performance.now();
-    const output = await this.session.run({ [this.session.inputNames[0]]: new ort.Tensor('float32', input, [boxes.length, 3, FACE_SIDE, FACE_SIDE]) });
-    const decodeAt = performance.now();
-    const tensor = output.gender_logits;
-    const data = tensor.data;
-    if (!(data instanceof Float32Array) || data.length !== boxes.length * 2) throw new Error('Gender output contract mismatch');
-    const estimates = boxes.map((_, index): GenderEstimate => {
-      const female = data[index * 2];
-      const male = data[index * 2 + 1];
-      if (!Number.isFinite(female) || !Number.isFinite(male)) return undefined;
-      const confidence = 1 / (1 + Math.exp(-Math.abs(male - female)));
-      return { label: male > female ? 'male' : 'female', confidence };
-    });
-    this.lastTimings = { preprocess: runAt - started, run: decodeAt - runAt, decode: performance.now() - decodeAt };
-    return estimates;
+    const output = await this.session.run({ [this.session.inputNames[0]]: new ort.Tensor('float32', input, [boxes.length, 3, FACE_SIDE, FACE_SIDE]) }, ['gender_logits']);
+    try {
+      const decodeAt = performance.now();
+      const tensor = output.gender_logits;
+      const data = tensor.data;
+      if (!(data instanceof Float32Array) || data.length !== boxes.length * 2) throw new Error('Gender output contract mismatch');
+      const estimates = boxes.map((_, index): GenderEstimate => {
+        const female = data[index * 2];
+        const male = data[index * 2 + 1];
+        if (!Number.isFinite(female) || !Number.isFinite(male)) return undefined;
+        const confidence = 1 / (1 + Math.exp(-Math.abs(male - female)));
+        return { label: male > female ? 'male' : 'female', confidence };
+      });
+      this.lastTimings = { preprocess: runAt - started, run: decodeAt - runAt, decode: performance.now() - decodeAt };
+      return estimates;
+    } finally { for (const tensor of Object.values(output)) tensor.dispose(); }
   }
 
   async dispose(): Promise<void> { await this.session?.release(); this.session = undefined; }

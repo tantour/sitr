@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Sitr contributors
 import * as ort from 'onnxruntime-web/webgpu';
 
 export { ort };

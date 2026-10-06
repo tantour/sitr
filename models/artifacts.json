@@ -11,13 +11,133 @@
     "simplified": false
   },
   "artifacts": [
-    { "name": "yolo26n-seg-256.onnx", "sha256": "95f531fb7cd9cd5d9df8c7e81e5faf124f20359ac39c7cd538283bb45323f7b9", "source": "export of yolo26n-seg.pt at 256" },
-    { "name": "yolo26n-seg-320.onnx", "sha256": "6421b8490818e6ebb92d2e25ec61885c5a09c15d68266be606336f04c99c4add", "source": "export of yolo26n-seg.pt at 320" },
-    { "name": "yolo26n-seg-416.onnx", "sha256": "97c149de75b9c61cd430a990eaad53c2078478b9c7d9951f11b797ab8161d3af", "source": "export of yolo26n-seg.pt at 416" },
-    { "name": "selfie_multiclass_256x256.tflite", "sha256": "c6748b1253a99067ef71f7e26ca71096cd449baefa8f101900ea23016507e0e0", "source": "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite" },
-    { "name": "yunet-2026may.onnx", "sha256": "ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0", "source": "https://media.githubusercontent.com/media/opencv/opencv_zoo/47534e27c9851bb1128ccc0102f1145e27f23f98/models/face_detection_yunet/face_detection_yunet_2026may.onnx", "origin": "OpenCV Zoo YuNet 2026may", "license": "MIT" },
-    { "name": "fastface-large-128.onnx", "sha256": "359532121277eed67423c91b1b68eb45fbb80e2f6172ce0605da423afc6dced8", "source": "https://huggingface.co/iFurySt/fastface/resolve/main/models/fastface-large-128/model_fp32.onnx", "origin": "FastFace Large 128, MobileNetV3", "license": "Apache-2.0" }
+    {
+      "name": "yolo26n-det-256.onnx",
+      "sha256": "78ec2d68b1af8e2434f06a8fc91139a28583b613b1782fba404c71b081ff1c31",
+      "source": "Ultralytics yolo26n.pt detection export, 256 px, FP32, opset 17, NMS off",
+      "license": "AGPL-3.0-only",
+      "licenseFile": "LICENSES/AGPL-3.0.txt"
+    },
+    {
+      "name": "yolo26n-det-256-gpu.onnx",
+      "sha256": "42772fb6ded8d852fac36e9130b012f3dbd85101dd1108a5c8094ca410e488de",
+      "source": "Pre-TopK FP32 graph derived from yolo26n-det-256.onnx",
+      "license": "AGPL-3.0-only",
+      "licenseFile": "LICENSES/AGPL-3.0.txt"
+    },
+    {
+      "name": "yolo26n-seg-256-gpu.onnx",
+      "sha256": "9df56c56804135c4d845fc3db1a04eea5170f5055467ccae3cb1f33153ccdd58",
+      "source": "FP32 graph derived by scripts/export-gpu-models.py",
+      "license": "AGPL-3.0-only",
+      "licenseFile": "LICENSES/AGPL-3.0.txt"
+    },
+    {
+      "name": "yolo26n-seg-320-gpu.onnx",
+      "sha256": "6f7b16718e4b03812c5592895906096b4e080ddaedff0e61178e5bf25efe15dc",
+      "source": "FP32 graph derived by scripts/export-gpu-models.py",
+      "license": "AGPL-3.0-only",
+      "licenseFile": "LICENSES/AGPL-3.0.txt"
+    },
+    {
+      "name": "yolo26n-seg-416-gpu.onnx",
+      "sha256": "7da201b41f7011636a447092f2a26eea8e8c59f12c6578d6ae6fadfeb857c0d3",
+      "source": "FP32 graph derived by scripts/export-gpu-models.py",
+      "license": "AGPL-3.0-only",
+      "licenseFile": "LICENSES/AGPL-3.0.txt"
+    },
+    {
+      "name": "yolo26n-seg-256.onnx",
+      "sha256": "95f531fb7cd9cd5d9df8c7e81e5faf124f20359ac39c7cd538283bb45323f7b9",
+      "source": "export of yolo26n-seg.pt at 256",
+      "license": "AGPL-3.0-only",
+      "licenseFile": "LICENSES/AGPL-3.0.txt"
+    },
+    {
+      "name": "yolo26n-seg-320.onnx",
+      "sha256": "6421b8490818e6ebb92d2e25ec61885c5a09c15d68266be606336f04c99c4add",
+      "source": "export of yolo26n-seg.pt at 320",
+      "license": "AGPL-3.0-only",
+      "licenseFile": "LICENSES/AGPL-3.0.txt"
+    },
+    {
+      "name": "yolo26n-seg-416.onnx",
+      "sha256": "97c149de75b9c61cd430a990eaad53c2078478b9c7d9951f11b797ab8161d3af",
+      "source": "export of yolo26n-seg.pt at 416",
+      "license": "AGPL-3.0-only",
+      "licenseFile": "LICENSES/AGPL-3.0.txt"
+    },
+    {
+      "name": "selfie_multiclass_256x256.tflite",
+      "sha256": "c6748b1253a99067ef71f7e26ca71096cd449baefa8f101900ea23016507e0e0",
+      "source": "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite",
+      "license": "Apache-2.0",
+      "licenseFile": "LICENSES/Apache-2.0.txt"
+    },
+    {
+      "name": "yunet-2026may.onnx",
+      "sha256": "ebafce4e3c118d6554634be5c27ab333b4c047a9a8c3faf1d7cf93101c22f0f0",
+      "source": "https://media.githubusercontent.com/media/opencv/opencv_zoo/47534e27c9851bb1128ccc0102f1145e27f23f98/models/face_detection_yunet/face_detection_yunet_2026may.onnx",
+      "origin": "OpenCV Zoo YuNet 2026may",
+      "license": "MIT",
+      "licenseFile": "LICENSES/YuNet-MIT.txt"
+    },
+    {
+      "name": "fastface-large-128.onnx",
+      "sha256": "359532121277eed67423c91b1b68eb45fbb80e2f6172ce0605da423afc6dced8",
+      "source": "https://huggingface.co/iFurySt/fastface/resolve/15240f03bb257385305e5985e04e6d2477a242fa/models/fastface-large-128/model_fp32.onnx",
+      "origin": "FastFace Large 128, MobileNetV3",
+      "license": "Apache-2.0",
+      "licenseFile": "LICENSES/FastFace-Apache-2.0.txt"
+    },
+    {
+      "name": "body-intel-0230.onnx",
+      "sha256": "e939eddcb1445f06046611525969dfbf21157bcc189fb12a4e4b5e0579a85d8e",
+      "source": "OpenVINO person-attributes-recognition-crossroad-0230 FP32 official IR converted with openvino2onnx 1.1.0",
+      "license": "Apache-2.0",
+      "licenseFile": "LICENSES/Open-Model-Zoo-Apache-2.0.txt"
+    },
+    {
+      "name": "body-paddle-pplcnet.onnx",
+      "sha256": "8f180a2e58e7c582feb5eac031657c38e06f7df4271e3e846b0f0fa4e57667f5",
+      "source": "PaddleClas PULC person_attribute_infer official weights converted with paddle2onnx 1.3.1",
+      "license": "Apache-2.0",
+      "licenseFile": "LICENSES/PaddleClas-Apache-2.0.txt"
+    }
   ],
-  "sourceWeights": { "name": "yolo26n-seg.pt", "sha256": "361fbfabab285c3237700b6bb91d7ecfa602cd945fffda8dbec1242829b71e73f", "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-seg.pt" },
-  "referenceExport": { "name": "yolo26n-seg-640.onnx", "sha256": "711e0ef837c677ae4006f65fe503a62a6b0529979f4828ed50b674a7482b7d2e", "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-seg.onnx" }
+  "sourceWeights": {
+    "name": "yolo26n-seg.pt",
+    "sha256": "361fbfabab285c3237700b6bb91d7ecfa602cd945fffda8dbe1242829b71e73f",
+    "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-seg.pt"
+  },
+  "detectionWeights": {
+    "name": "yolo26n.pt",
+    "sha256": "9b09cc8bf347f0fc8a5f7657480587f25db09b34bf33b0652110fb03a8ad4fef",
+    "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n.pt"
+  },
+  "referenceExport": {
+    "name": "yolo26n-seg-640.onnx",
+    "sha256": "711e0ef837c677ae4006f65fe503a62a6b0529979f4828ed50b674a7482b7d2e",
+    "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-seg.onnx"
+  },
+  "sourceArtifacts": [
+    {
+      "name": "openvino-0230.xml",
+      "sha256": "ca288994e74a27bc1912e610460054ca79165ad68c2ec555ccda2738591c1502",
+      "url": "https://storage.openvinotoolkit.org/repositories/open_model_zoo/2023.0/models_bin/1/person-attributes-recognition-crossroad-0230/FP32/person-attributes-recognition-crossroad-0230.xml",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "openvino-0230.bin",
+      "sha256": "9a2c20aa88b282219d31b67c9252cdf844d6ce387090eb676e79e284fa3a25d8",
+      "url": "https://storage.openvinotoolkit.org/repositories/open_model_zoo/2023.0/models_bin/1/person-attributes-recognition-crossroad-0230/FP32/person-attributes-recognition-crossroad-0230.bin",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "person_attribute_infer.tar",
+      "sha256": "576cc739749021298418e61dfa44362acf427a99e055f302c3f895d638a2bde4",
+      "url": "https://paddleclas.bj.bcebos.com/models/PULC/person_attribute_infer.tar",
+      "license": "Apache-2.0"
+    }
+  ]
 }

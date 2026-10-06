@@ -1,6 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Sitr contributors
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, normalizeSettings, resolveYoloSize } from '../src/config/settings';
-import { selectedMask } from '../src/rules/evaluate';
+import { DEFAULT_SETTINGS, normalizeSettings, normalizeSiteException, resolveYoloSize, siteIsExcepted } from '../src/config/settings';
+import { imageDetectionGatePass, personSelected, selectedMask } from '../src/rules/evaluate';
 import { compose, pruneIslands } from '../src/rendering/compositor';
 import type { Track, TrackObservation } from '../src/state/contracts';
 
@@ -28,7 +30,7 @@ describe('censorship rules', () => {
   });
   it('keeps face skin visible for an unclassified person under the whole-person legacy setting', () => {
     const legacySettings = normalizeSettings({ schemaVersion: 2, unknown: 'whole' });
-    expect(legacySettings.unknown).toBe('selected');
+    expect([legacySettings.imageUnknown, legacySettings.videoUnknown]).toEqual(['selected', 'selected']);
     expect(legacySettings.faceDetectionConfidence).toBe(0.55);
     expect(legacySettings.yoloConfidence).toBe(0.1);
     expect(normalizeSettings({ yoloConfidence: 0 }).yoloConfidence).toBe(0.01);
@@ -37,9 +39,44 @@ describe('censorship rules', () => {
     expect(normalizeSettings({ faceDetectionConfidence: 4, minFaceSizePx: 1, faceMargin: -1 }).faceMargin).toBe(0);
     expect([...selectedMask(observation('a', 0.3), legacySettings)]).toEqual([255, 255, 0]);
   });
+  it('applies independent image and video choices to unclassified people', () => {
+    const person = observation('a', 0.3);
+    const showVideo = normalizeSettings({ imageUnknown: 'selected', videoUnknown: 'allow' });
+    expect(personSelected(person, showVideo, 'image')).toBe(true);
+    expect(personSelected(person, showVideo, 'video')).toBe(false);
+    expect([...selectedMask(person, showVideo)]).toEqual([255, 255, 0]);
+    const showImage = normalizeSettings({ imageUnknown: 'allow', videoUnknown: 'selected' });
+    expect(personSelected(person, showImage, 'image')).toBe(false);
+    expect(personSelected(person, showImage, 'video')).toBe(true);
+    expect([...selectedMask(person, showImage)]).toEqual([0, 0, 0]);
+    person.label = 'female'; person.labelUsable = true;
+    expect(personSelected(person, showVideo, 'video')).toBe(true);
+  });
 });
 
 describe('model resolution settings', () => {
+  it('accepts pasted site URLs and matches their subdomains without matching lookalikes', () => {
+    expect(normalizeSiteException('https://www.Example.com:8443/watch?v=1')).toBe('example.com');
+    expect(normalizeSettings({ siteExceptions: ['HTTPS://WWW.Example.com/watch', 'example.com', 'not a host'] }).siteExceptions)
+      .toEqual(['example.com']);
+    expect(siteIsExcepted('player.example.com', ['example.com'])).toBe(true);
+    expect(siteIsExcepted('example.com.evil.test', ['example.com'])).toBe(false);
+  });
+  it('keeps independent image and video gender-model choices across settings migration', () => {
+    const legacy = normalizeSettings({ schemaVersion: 11 });
+    expect([legacy.imageGenderModel, legacy.videoGenderModel]).toEqual(['face', 'face']);
+    const selected = normalizeSettings({ imageGenderModel: 'face-paddle', videoGenderModel: 'body-intel' });
+    expect([selected.imageGenderModel, selected.videoGenderModel]).toEqual(['face-paddle', 'body-intel']);
+    expect(normalizeSettings({ imageGenderModel: 'missing' as 'face' }).imageGenderModel).toBe('face');
+  });
+  it('migrates the shared unclassified choice to both media types', () => {
+    const legacy = normalizeSettings({ schemaVersion: 12, unknown: 'allow' });
+    expect([legacy.imageUnknown, legacy.videoUnknown]).toEqual(['allow', 'allow']);
+    expect('unknown' in legacy).toBe(false);
+    const mixed = normalizeSettings({ schemaVersion: 12, unknown: 'allow', imageUnknown: 'selected' });
+    expect([mixed.imageUnknown, mixed.videoUnknown]).toEqual(['selected', 'allow']);
+    expect(normalizeSettings({ imageUnknown: 'invalid', videoUnknown: 'invalid' }).imageUnknown).toBe('selected');
+  });
   it('uses the preset for Auto and permits only packaged YOLO sizes', () => {
     const quality = normalizeSettings({ performance: 'quality' });
     expect(resolveYoloSize(quality, 'image')).toBe(416);
@@ -50,6 +87,44 @@ describe('model resolution settings', () => {
     expect(normalizeSettings({ yoloImageSize: 384, yunetSize: 384, faceCaptureSize: 900 }).yoloImageSize).toBe('auto');
     expect(normalizeSettings({ yunetSize: 384 }).yunetSize).toBe(320);
     expect(normalizeSettings({ faceCaptureSize: 900 }).faceCaptureSize).toBe(640);
+  });
+  it('preserves legacy mask margins and clamps expansion slider settings', () => {
+    const legacy = normalizeSettings({ schemaVersion: 8 });
+    expect([legacy.imageExpansion, legacy.videoExpansion]).toEqual([1, 4]);
+    const custom = normalizeSettings({ imageExpansion: 7.6, videoExpansion: 100 });
+    expect([custom.imageExpansion, custom.videoExpansion]).toEqual([8, 24]);
+    expect(normalizeSettings({ imageExpansion: -3, videoExpansion: Number.NaN }).imageExpansion).toBe(0);
+    expect(normalizeSettings({ videoExpansion: Number.NaN }).videoExpansion).toBe(4);
+  });
+  it('keeps existing image coverage and black effects by default, and validates effect intensity', () => {
+    const legacy = normalizeSettings({ schemaVersion: 9 });
+    expect([legacy.imageCoverage, legacy.imageWholeBodyEffect, legacy.videoEffect]).toEqual(['regions', 'black', 'black']);
+    const custom = normalizeSettings({ imageCoverage: 'whole-body', imageWholeBodyEffect: 'checkerboard',
+      videoEffect: 'blur', imageEffectIntensity: 100, videoEffectIntensity: 2,
+      imageEffectGrayscale: true, videoEffectGrayscale: true });
+    expect([custom.imageEffectIntensity, custom.videoEffectIntensity]).toEqual([64, 8]);
+    expect([custom.imageEffectGrayscale, custom.videoEffectGrayscale]).toEqual([true, true]);
+    expect(normalizeSettings({ imageCoverage: 'invalid' as 'regions' }).imageCoverage).toBe('regions');
+  });
+  it('accepts face effects in both image modes and migrates the old face-skin switch', () => {
+    const legacy = normalizeSettings({ schemaVersion: 13, faceSkin: true });
+    expect(legacy.imageRegionFaceEffect).toBe('black');
+    const custom = normalizeSettings({ imageCoverage: 'whole-body-face', imageRegionFaceEffect: 'checkerboard',
+      imageWholeBodyFaceEffect: 'blur', imageFaceEffectIntensity: 100, imageFaceEffectGrayscale: true });
+    expect([custom.imageCoverage, custom.imageRegionFaceEffect, custom.imageWholeBodyFaceEffect,
+      custom.imageFaceEffectIntensity, custom.imageFaceEffectGrayscale])
+      .toEqual(['whole-body-face', 'checkerboard', 'blur', 64, true]);
+    expect(normalizeSettings({ imageRegionFaceEffect: 'invalid' as 'blur' }).imageRegionFaceEffect).toBe('show');
+  });
+  it('requires the selected evidence before applying image censorship', () => {
+    const evidence: Array<[boolean, boolean]> = [[false, false], [true, false], [false, true], [true, true]];
+    const expectations = { any: [true, true, true, true], face: [false, true, false, true],
+      person: [false, false, true, true], either: [false, true, true, true], both: [false, false, false, true] };
+    for (const [gate, expected] of Object.entries(expectations)) {
+      const settings = normalizeSettings({ imageDetectionGate: gate as typeof DEFAULT_SETTINGS.imageDetectionGate });
+      expect(evidence.map(([face, person]) => imageDetectionGatePass(settings, face, person))).toEqual(expected);
+    }
+    expect(normalizeSettings({ imageDetectionGate: 'invalid' as 'face' }).imageDetectionGate).toBe('any');
   });
 });
 
@@ -89,6 +164,13 @@ describe('instance ownership', () => {
     expect(result.unassignedForeground).toBe(10);
     expect([...result.unassignedMask].filter(Boolean)).toHaveLength(10);
   });
+  it('uses MediaPipe clothing as whole-body fallback when YOLO finds no person', () => {
+    const semantic = new Uint8Array([0, 1, 2, 3, 4, 5, 0, 0, 0]);
+    const shownFace = compose([], semantic, 3, 3, DEFAULT_SETTINGS, 'whole-body');
+    expect([...shownFace.unassignedMask]).toEqual([0, 255, 255, 0, 255, 255, 0, 0, 0]);
+    const coveredFace = compose([], semantic, 3, 3, DEFAULT_SETTINGS, 'whole-body-face');
+    expect([...coveredFace.unassignedMask]).toEqual([0, 255, 255, 255, 255, 255, 0, 0, 0]);
+  });
   it('limits uncertain-person protection to selected semantic pixels', () => {
     const mask = new Array<number>(100).fill(0);
     mask.fill(0.8, 20, 30);
@@ -106,6 +188,13 @@ describe('instance ownership', () => {
     expect(result.unassignedMask[1]).toBe(0);
     expect(result.unassignedMask[2]).toBe(0);
     expect(result.unassignedMask[3]).toBe(255);
+  });
+  it('shows unassigned image foreground when image unclassified people are allowed', () => {
+    const semantic = new Uint8Array(100).fill(2);
+    const settings = normalizeSettings({ imageUnknown: 'allow', videoUnknown: 'selected' });
+    const result = compose([], semantic, 10, 10, settings);
+    expect(result.unassignedForeground).toBe(0);
+    expect(result.unassignedMask.every(value => value === 0)).toBe(true);
   });
   it('removes isolated model pixels without erasing a real region', () => {
     const mask = new Uint8Array(100);

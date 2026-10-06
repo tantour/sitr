@@ -1,14 +1,28 @@
 {
   "manifest_version": 3,
-  "name": "Local Media Censor",
-  "version": "0.4.0",
-  "description": "Local, per-person image and video masking.",
+  "name": "Sitr",
+  "version": "0.4.2",
+  "description": "Private image and video protection, processed locally.",
   "minimum_chrome_version": "148",
   "message_serialization": "structured_clone",
   "permissions": ["offscreen", "storage"],
   "host_permissions": ["http://*/*", "https://*/*"],
+  "icons": {
+    "16": "icons/sitr-16.png",
+    "32": "icons/sitr-32.png",
+    "48": "icons/sitr-48.png",
+    "128": "icons/sitr-128.png"
+  },
   "background": { "service_worker": "background.js", "type": "module" },
-  "action": { "default_popup": "popup.html" },
+  "action": {
+    "default_title": "Sitr",
+    "default_icon": {
+      "16": "icons/sitr-16.png",
+      "32": "icons/sitr-32.png",
+      "48": "icons/sitr-48.png"
+    },
+    "default_popup": "popup.html"
+  },
   "content_scripts": [{ "matches": ["http://*/*", "https://*/*"], "js": ["content.js"], "run_at": "document_start", "all_frames": true }],
   "web_accessible_resources": [{ "resources": ["motion.html", "motion-host.js", "motion-worker.js"], "matches": ["http://*/*", "https://*/*"] }],
   "content_security_policy": { "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" },

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Sitr contributors
 import { FilesetResolver, ImageSegmenter } from '@mediapipe/tasks-vision';
 import type { Rect } from '../state/contracts';
 const extensionAsset = (path: string): string => `${self.location.origin}/${path}`;
@@ -42,6 +44,10 @@ export class SelfieSemanticSegmenter {
     if (!raw) throw new Error('Semantic category mask missing');
     const side = Math.sqrt(raw.length);
     if (!Number.isInteger(side)) throw new Error('Semantic category mask shape mismatch');
+    if (side === size) {
+      this.lastTimings = { preprocess: runAt - started, run: decodeAt - runAt, decode: performance.now() - decodeAt };
+      return raw;
+    }
     const mask = new Uint8Array(size * size);
     for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) mask[y * size + x] = raw[Math.min(side - 1, Math.floor(y * side / size)) * side + Math.min(side - 1, Math.floor(x * side / size))];
     this.lastTimings = { preprocess: runAt - started, run: decodeAt - runAt, decode: performance.now() - decodeAt };

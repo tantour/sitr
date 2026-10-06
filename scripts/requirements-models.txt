@@ -1,0 +1,5 @@
+# Export tool versions. Body converters may require separate environments.
+ultralytics==8.4.38
+onnx==1.23.0
+onnxruntime==1.24.4
+# Optional body export CLIs: openvino2onnx==1.1.0; paddle2onnx==1.3.1.

@@ -1,21 +1,28 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Sitr contributors
 import type { AnalysisResult } from '../state/contracts';
 
 export class Overlay {
   readonly canvas = document.createElement('canvas');
   private maskCanvas = document.createElement('canvas');
+  private checkerCanvas = document.createElement('canvas');
+  private blurCanvas = document.createElement('canvas');
   private staticCanvas?: HTMLCanvasElement;
+  private faceCanvas?: HTMLCanvasElement;
+  private blackCanvas?: HTMLCanvasElement;
+  private faceLayerCanvas = document.createElement('canvas');
   private trackCanvases = new Map<string, HTMLCanvasElement>();
   private debugCanvases = new Map<string, HTMLCanvasElement>();
   private motion = new Map<string, { x: number; y: number }>();
   private bitmap?: CanvasRenderingContext2D;
   private frame?: AnalysisResult;
   private raf = 0;
-  private parent: HTMLElement;
+  private parent: HTMLElement | ShadowRoot;
   private readonly anchorName: string;
   private readonly originalAnchorName: string;
   private readonly originalAnchorPriority: string;
   constructor(private readonly media: HTMLImageElement | HTMLVideoElement) {
-    this.parent = media.parentElement || document.body || document.documentElement;
+    this.parent = media.parentNode instanceof ShadowRoot ? media.parentNode : media.parentElement || document.body || document.documentElement;
     this.anchorName = `--local-media-censor-${crypto.randomUUID().replaceAll('-', '')}`;
     this.originalAnchorName = media.style.getPropertyValue('anchor-name');
     this.originalAnchorPriority = media.style.getPropertyPriority('anchor-name');
@@ -24,12 +31,12 @@ export class Overlay {
     Object.assign(this.canvas.style, {
       position: 'absolute', positionAnchor: this.anchorName, left: 'anchor(left)', top: 'anchor(top)',
       width: 'anchor-size(width)', height: 'anchor-size(height)',
-      zIndex: '2147483647', pointerEvents: 'none',
+      zIndex: getComputedStyle(media).zIndex, pointerEvents: 'none',
       background: 'transparent', margin: '0', padding: '0', border: '0',
     });
     this.canvas.dataset.localMediaCensorOverlay = 'true';
     if (media.id) this.canvas.dataset.localMediaCensorFor = media.id;
-    this.parent.appendChild(this.canvas);
+    media.after(this.canvas);
     this.bitmap = this.maskCanvas.getContext('2d') || undefined;
     this.draw();
   }
@@ -63,25 +70,44 @@ export class Overlay {
   clear(): void {
     this.frame = undefined;
     this.staticCanvas = undefined;
+    this.faceCanvas = undefined;
+    this.blackCanvas = undefined;
     this.trackCanvases.clear();
     this.debugCanvases.clear();
     this.motion.clear();
     this.canvas.getContext('2d')?.clearRect(0, 0, this.canvas.width, this.canvas.height);
   }
   syncParent(): void {
-    const parent = this.media.parentElement || document.body || document.documentElement;
-    if (parent !== this.parent) { this.parent = parent; parent.appendChild(this.canvas); }
+    const parent = this.media.parentNode;
+    if (!this.media.isConnected || !(parent instanceof HTMLElement || parent instanceof ShadowRoot)) {
+      this.canvas.style.display = 'none';
+      return;
+    }
+    if (parent !== this.parent || this.media.nextSibling !== this.canvas) {
+      this.parent = parent;
+      this.media.after(this.canvas);
+    }
+    this.canvas.style.zIndex = getComputedStyle(this.media).zIndex;
   }
   set(result: AnalysisResult): void {
     this.frame = result;
-    this.maskCanvas.width = result.width;
-    this.maskCanvas.height = result.height;
-    const ctx = this.bitmap ?? this.maskCanvas.getContext('2d');
-    if (!ctx) throw new Error('Overlay canvas unavailable');
-    ctx.putImageData(new ImageData(new Uint8ClampedArray(result.rgbaMask), result.width, result.height), 0, 0);
-    this.staticCanvas = result.staticMask ? this.layerCanvas(result.staticMask, result.width, result.height) : undefined;
-    this.trackCanvases.clear();
-    for (const mask of result.trackMasks || []) this.trackCanvases.set(mask.id, this.layerCanvas(mask.alpha, result.width, result.height));
+    if (!result.trackMasks) {
+      if (this.maskCanvas.width !== result.width) this.maskCanvas.width = result.width;
+      if (this.maskCanvas.height !== result.height) this.maskCanvas.height = result.height;
+      const ctx = this.bitmap ?? this.maskCanvas.getContext('2d');
+      if (!ctx) throw new Error('Overlay canvas unavailable');
+      ctx.putImageData(new ImageData(new Uint8ClampedArray(result.rgbaMask.buffer as ArrayBuffer,
+        result.rgbaMask.byteOffset, result.rgbaMask.byteLength), result.width, result.height), 0, 0);
+    }
+    this.staticCanvas = result.staticMask ? this.layerCanvas(result.staticMask, result.width, result.height, this.staticCanvas) : undefined;
+    this.faceCanvas = result.faceMask ? this.layerCanvas(result.faceMask, result.width, result.height, this.faceCanvas) : undefined;
+    this.blackCanvas = result.blackMask ? this.layerCanvas(result.blackMask, result.width, result.height, this.blackCanvas) : undefined;
+    const active = new Set<string>();
+    for (const mask of result.trackMasks || []) {
+      active.add(mask.id);
+      this.trackCanvases.set(mask.id, this.layerCanvas(mask.alpha, result.width, result.height, this.trackCanvases.get(mask.id)));
+    }
+    for (const id of this.trackCanvases.keys()) if (!active.has(id)) this.trackCanvases.delete(id);
     this.debugCanvases.clear();
     for (const item of result.debugPersonMasks || []) this.debugCanvases.set(item.id, this.outlineCanvas(item.mask, item.width, item.height, this.trackColor(item.labelUsable ? item.label : 'unknown')));
     this.draw();
@@ -104,34 +130,80 @@ export class Overlay {
     canvas.getContext('2d')?.putImageData(new ImageData(rgba, width, height), 0, 0);
     return canvas;
   }
-  private layerCanvas(alpha: Uint8Array, width: number, height: number): HTMLCanvasElement {
-    const canvas = document.createElement('canvas');
-    canvas.width = width; canvas.height = height;
-    const pixels = new Uint8ClampedArray(alpha.length * 4);
+  private layerImages = new WeakMap<HTMLCanvasElement, ImageData>();
+  private layerCanvas(alpha: Uint8Array, width: number, height: number, reusable?: HTMLCanvasElement): HTMLCanvasElement {
+    const canvas = reusable ?? document.createElement('canvas');
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
+    let image = this.layerImages.get(canvas);
+    if (!image || image.width !== width || image.height !== height) {
+      image = new ImageData(width, height);
+      this.layerImages.set(canvas, image);
+    }
+    const pixels = image.data;
     for (let i = 0; i < alpha.length; i++) pixels[4 * i + 3] = alpha[i];
-    canvas.getContext('2d')?.putImageData(new ImageData(pixels, width, height), 0, 0);
+    canvas.getContext('2d')?.putImageData(image, 0, 0);
     return canvas;
+  }
+  private drawEffect(ctx: CanvasRenderingContext2D, dx: number, dy: number, width: number, height: number,
+    effect?: AnalysisResult['effect']): void {
+    if (!effect || effect.kind === 'black') return;
+    try {
+      const divisor = effect.kind === 'blur' ? this.media instanceof HTMLVideoElement ? 4 : 2 : effect.intensity;
+      const source = effect.kind === 'blur' ? this.blurCanvas : this.checkerCanvas;
+      const smallWidth = Math.max(1, Math.ceil(width / divisor));
+      const smallHeight = Math.max(1, Math.ceil(height / divisor));
+      if (source.width !== smallWidth) source.width = smallWidth;
+      if (source.height !== smallHeight) source.height = smallHeight;
+      const small = source.getContext('2d');
+      if (!small) return;
+      small.clearRect(0, 0, smallWidth, smallHeight);
+      small.imageSmoothingEnabled = true;
+      const filters = [effect.kind === 'blur' ? `blur(${Math.max(1, effect.intensity / divisor)}px)` : '',
+        effect.grayscale ? 'grayscale(1)' : ''].filter(Boolean);
+      small.filter = filters.length ? filters.join(' ') : 'none';
+      if ((effect.kind === 'blur' && !small.filter.includes('blur(')) ||
+          (effect.grayscale && !small.filter.includes('grayscale('))) return;
+      small.drawImage(this.media, 0, 0, smallWidth, smallHeight);
+      small.filter = 'none';
+      ctx.save();
+      try {
+        ctx.globalCompositeOperation = 'source-atop';
+        ctx.imageSmoothingEnabled = effect.kind !== 'checkerboard';
+        ctx.drawImage(source, dx, dy, width, height);
+      } finally { ctx.restore(); }
+    } catch { /* Keep the already-drawn black mask if this media cannot be copied. */ }
   }
   setMotion(offsets: Map<string, { x: number; y: number }>): void { this.motion = offsets; this.draw(); }
   draw(): void {
-    this.syncParent();
     if (this.raf) return;
     this.raf = requestAnimationFrame(() => {
       this.raf = 0;
-      if (!this.media.isConnected) return;
+      this.render();
+    });
+  }
+  /** Commit the first mask before the controller removes its blackout. */
+  drawNow(): boolean {
+    if (this.raf) cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    return this.render();
+  }
+  private render(): boolean {
+      this.syncParent();
+      if (!this.media.isConnected) return false;
       const rect = this.media.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) { this.canvas.style.display = 'none'; return; }
+      if (rect.width <= 0 || rect.height <= 0) { this.canvas.style.display = 'none'; return false; }
       this.canvas.style.display = 'block';
       const scale = Math.min(devicePixelRatio || 1, 2);
       const cw = Math.ceil(rect.width * scale), ch = Math.ceil(rect.height * scale);
       if (this.canvas.width !== cw || this.canvas.height !== ch) { this.canvas.width = cw; this.canvas.height = ch; }
       const ctx = this.canvas.getContext('2d');
-      if (!ctx) return;
+      if (!ctx) return false;
       ctx.clearRect(0, 0, cw, ch);
-      if (!this.frame || this.frame.black) return;
+      if (!this.frame || this.frame.black) return false;
       const intrinsicW = this.media instanceof HTMLVideoElement ? this.media.videoWidth : this.media.naturalWidth;
       const intrinsicH = this.media instanceof HTMLVideoElement ? this.media.videoHeight : this.media.naturalHeight;
-      if (!intrinsicW || !intrinsicH) return;
+      if (!intrinsicW || !intrinsicH) return false;
       const style = getComputedStyle(this.media);
       const fit = style.objectFit || 'fill';
       let renderedW = cw, renderedH = ch;
@@ -160,6 +232,20 @@ export class Overlay {
           ctx.drawImage(layer, sx, sy, sourceW, sourceH, dx + mx, dy + my, renderedW, renderedH);
         }
       } else ctx.drawImage(this.maskCanvas, sx, sy, sourceW, sourceH, dx, dy, renderedW, renderedH);
+      this.drawEffect(ctx, dx, dy, renderedW, renderedH, this.frame.effect);
+      if (this.faceCanvas) {
+        if (this.faceLayerCanvas.width !== cw || this.faceLayerCanvas.height !== ch) {
+          this.faceLayerCanvas.width = cw; this.faceLayerCanvas.height = ch;
+        }
+        const faceContext = this.faceLayerCanvas.getContext('2d');
+        if (faceContext) {
+          faceContext.clearRect(0, 0, cw, ch);
+          faceContext.drawImage(this.faceCanvas, sx, sy, sourceW, sourceH, dx, dy, renderedW, renderedH);
+          this.drawEffect(faceContext, dx, dy, renderedW, renderedH, this.frame.faceEffect);
+          ctx.drawImage(this.faceLayerCanvas, 0, 0);
+        }
+      }
+      if (this.blackCanvas) ctx.drawImage(this.blackCanvas, sx, sy, sourceW, sourceH, dx, dy, renderedW, renderedH);
       if (this.frame.debugPersonMasks?.length) {
         const debugScale = this.frame.debugPersonMasks[0].width / s;
         for (const person of this.frame.debugPersonMasks) {
@@ -193,7 +279,10 @@ export class Overlay {
           ctx.save();
           ctx.strokeStyle = color; ctx.lineWidth = Math.max(1.5, 2 * scale); ctx.setLineDash(face.ambiguous ? [5 * scale, 3 * scale] : []);
           ctx.strokeRect(x, y, w, h);
-          const label = `face ${Math.round(face.score * 100)}% → ${track?.labelUsable ? `${track.label} ${Math.round(track.genderConfidence * 100)}%` : 'unclassified'}`;
+          const bodyOnly = this.frame.genderDiagnostics?.model.startsWith('body-');
+          const label = bodyOnly
+            ? `face location ${Math.round(face.score * 100)}% · gender from body`
+            : `face ${Math.round(face.score * 100)}% → ${track?.labelUsable ? `${track.label} ${Math.round(track.genderConfidence * 100)}%` : 'unclassified'}`;
           ctx.font = `${Math.max(10, 11 * scale)}px system-ui, sans-serif`;
           const labelWidth = ctx.measureText(label).width + 8;
           const labelY = y + h + 2;
@@ -202,7 +291,7 @@ export class Overlay {
           ctx.restore();
         }
       }
-    });
+    return true;
   }
   dispose(): void {
     cancelAnimationFrame(this.raf);
@@ -210,7 +299,11 @@ export class Overlay {
     if (this.originalAnchorName) this.media.style.setProperty('anchor-name', this.originalAnchorName, this.originalAnchorPriority);
     else this.media.style.removeProperty('anchor-name');
     this.maskCanvas.width = this.maskCanvas.height = 0;
+    this.checkerCanvas.width = this.checkerCanvas.height = 0;
+    this.blurCanvas.width = this.blurCanvas.height = 0;
+    this.faceLayerCanvas.width = this.faceLayerCanvas.height = 0;
     this.staticCanvas = undefined;
+    this.faceCanvas = undefined;
     this.trackCanvases.clear();
     this.debugCanvases.clear();
   }

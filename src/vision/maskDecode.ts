@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 Sitr contributors
 import type { Rect } from '../state/contracts';
 
 function sigmoid(value: number): number { return 1 / (1 + Math.exp(-value)); }
@@ -23,17 +25,28 @@ export class YoloMaskDecoder {
     const y1 = Math.min(this.size, Math.ceil((box.y + box.height) * this.size));
     this.generation = (this.generation + 1) >>> 0;
     if (this.generation === 0) { this.decodedGeneration.fill(0); this.generation = 1; }
-    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
-      const px = Math.min(this.protoWidth - 1, Math.floor(x * this.protoWidth / this.size));
+    let previousPy = -1;
+    for (let y = y0; y < y1; y++) {
       const py = Math.min(this.protoHeight - 1, Math.floor(y * this.protoHeight / this.size));
-      const planePixel = py * this.protoWidth + px;
-      if (this.decodedGeneration[planePixel] !== this.generation) {
-        let logit = 0;
-        for (let c = 0; c < this.channels; c++) logit += records[offset + 6 + c] * this.proto[c * this.protoPixels + planePixel];
-        this.decoded[planePixel] = sigmoid(logit);
-        this.decodedGeneration[planePixel] = this.generation;
+      const row = y * this.size;
+      if (py === previousPy) {
+        mask.copyWithin(row + x0, row - this.size + x0, row - this.size + x1);
+        continue;
       }
-      mask[y * this.size + x] = this.decoded[planePixel];
+      previousPy = py;
+      for (let x = x0; x < x1;) {
+        const px = Math.min(this.protoWidth - 1, Math.floor(x * this.protoWidth / this.size));
+        const planePixel = py * this.protoWidth + px;
+        if (this.decodedGeneration[planePixel] !== this.generation) {
+          let logit = 0;
+          for (let c = 0; c < this.channels; c++) logit += records[offset + 6 + c] * this.proto[c * this.protoPixels + planePixel];
+          this.decoded[planePixel] = sigmoid(logit);
+          this.decodedGeneration[planePixel] = this.generation;
+        }
+        const end = Math.min(x1, Math.ceil((px + 1) * this.size / this.protoWidth));
+        mask.fill(this.decoded[planePixel], row + x, row + end);
+        x = end;
+      }
     }
     return mask;
   }

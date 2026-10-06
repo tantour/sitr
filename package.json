@@ -1,12 +1,21 @@
 {
-  "name": "local-media-censor",
+  "name": "sitr",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.4.2",
+  "description": "Local image and video filtering for Chrome, with English and Arabic controls.",
+  "license": "AGPL-3.0-only",
+  "engines": { "node": ">=22.12.0" },
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "test:popup": "node scripts/popup-ux-check.mjs",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test && node scripts/check-docs.mjs",
+    "models": "node scripts/models.mjs",
+    "test:browser": "node scripts/browser-checks.mjs",
+    "verify:release": "node scripts/verify-release.mjs",
+    "release": "npm run check && npm run build && npm run test:browser && node scripts/package-release.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.0.1",
@@ -14,6 +23,8 @@
   },
   "devDependencies": {
     "@types/chrome": "0.0.323",
+    "@webgpu/types": "0.1.69",
+    "fflate": "0.8.3",
     "playwright": "^1.63.0",
     "typescript": "5.9.2",
     "vite": "^7.3.6",
