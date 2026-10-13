@@ -6,7 +6,7 @@
 | Nothing changes on an existing tab | Refresh the page after installation/reload. Check the main switch, selected people, media switches, Chrome site-access grants, and site exceptions. |
 | Image stays black | Wait for cold startup, inspect All settings → Diagnostics, then retry the engine. An unavailable/unreadable source or unsupported animation can remain black. |
 | Model build fails | Run `npm run models` to verify all hashes. Install the exact model ZIP for this source version. Do not disable hash checks. |
-| Video stays black | DRM, canvas players, inaccessible frames, or failed CORS recovery may prevent capture. Inspect diagnostics. More than two active videos can exceed capacity. |
+| Video stays black | DRM, canvas players, inaccessible frames, or failed CORS recovery may prevent capture. Inspect diagnostics. Other sites select two active videos; Google Meet rotates visible tiles, and larger grids can increase Strict playback blackouts. |
 | Playback stalls after a source reload | CORS recovery can reload an anonymous-readable source once. If the host requires authentication or blocks access, try pausing Sitr on that site. |
 | Frequent Strict blackouts | Check model latency, use a lower resolution/performance preset or fast video boxes, and compare with Smooth. Smooth can leave an older mask visible longer. |
 | Excess background is covered | Fast boxes are conservative rectangles. Try silhouette mode or reduce expansion after checking coverage. |

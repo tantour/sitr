@@ -6,7 +6,7 @@ import { root } from './models.mjs';
 const checks = ['popup-ux-check', 'smoke', 'cross-origin-probe', 'responsive-image-probe',
   'visibility-recovery-probe', 'overlay-stacking-probe', 'background-image-probe',
   'duplicate-image-probe', 'overlay-reuse-probe', 'skin-threshold-render-probe',
-  'video-compatibility-probe', 'face-probe', 'gender-probe'];
+  'video-compatibility-probe', 'meet-video-probe', 'face-probe', 'gender-probe'];
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(SMOKE_|FACE_PROBE_)/.test(key)));
 const args = process.argv.slice(2);
 if (args.length && (args.length !== 2 || args[0] !== '--from' || !checks.includes(args[1])))

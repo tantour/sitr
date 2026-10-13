@@ -74,7 +74,9 @@ Sitr needs HTTP(S) host access to analyze page media and fetch unreadable images
 
 ## Supported media and limitations
 
-Supported paths include regular images, readable sampled video, HTTP(S) iframes, media in shadow roots, and URL-based CSS background layers on HTML elements. Models prefer WebGPU with WASM fallback; cold startup can take seconds and performance depends on your device. Up to twenty detected people per analysis and two active videos are supported.
+Supported paths include regular images, readable sampled video, live video streams, HTTP(S) iframes, media in shadow roots, and URL-based CSS background layers on HTML elements. On Google Meet, visible participant videos and shared screens use your **Videos** settings. Analysis rotates across visible tiles with at most two outstanding video captures; larger meetings update each tile less frequently. Other sites select up to two active playing videos. Models prefer WebGPU with WASM fallback; cold startup can take seconds and performance depends on your device. Up to twenty detected people per analysis are supported.
+
+For Google Meet, reload the extension and refresh the Meet tab after updating. Enable **Videos**, check that `meet.google.com` is not paused or excepted, and select the people and effect to cover. Shared presentations keep their readable content, with detected selected people covered. **Faster conservative person boxes** reduce inference work for meeting grids. Filtering changes your local view; it does not alter anyone's transmitted camera or shared screen. Live Meet layouts have not been verified in an actual meeting; the browser regression fixture checks four incoming WebRTC streams, including a presentation.
 
 Animated images, DRM/unreadable streams, canvas players, browser-internal pages, pseudo-element backgrounds, `image-set()`, and many picture-in-picture/native-fullscreen paths are unsupported. Protected media can stay black after acquisition or model failure. Blur and mosaic can leave shapes recognizable. Strict playback reduces stale-mask display but still cannot guarantee complete coverage; Smooth may display an older mask longer.
 

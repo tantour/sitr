@@ -11,6 +11,8 @@ import { SharedImageWork } from '../media/sharedImageWork';
 import { imageLookAheadPx, imageWorkRange } from '../media/imageWorkRange';
 import { MediaDiscovery } from '../media/mediaDiscovery';
 import { recoverVideoCors, videoNeedsCors } from '../media/videoCors';
+import { videoHasLiveSource, videoSourceKey } from '../media/videoSource';
+import { VideoWork } from '../media/videoWork';
 
 const tag = 'data-local-media-censor-pending';
 const pendingCss = `img[${tag}],video[${tag}]{filter:brightness(0)!important}`;
@@ -25,6 +27,8 @@ let preparingEngine: Promise<void> | undefined;
 let preparingKey = '';
 const controllers = new Set<MediaController>();
 const byNode = new WeakMap<HTMLImageElement | HTMLVideoElement, MediaController>();
+const meetingPage = location.hostname.toLowerCase() === 'meet.google.com';
+const meetingVideoWork = new VideoWork<HTMLVideoElement>(ENGINE.maxActiveVideos);
 
 function protectedSite(): boolean {
   // An exception belongs to the page the user opened, not the host of a
@@ -166,6 +170,11 @@ class MediaController {
   private videoRetryDelayMs = 500;
 
   get viewportNode(): HTMLElement { return this.background?.element ?? this.node; }
+  videoReadyForWork(): boolean {
+    return !this.disposed && !this.inFlight && !this.corsRecovery && !this.labelPending && !this.videoRetryTimer &&
+      this.node instanceof HTMLVideoElement && Date.now() >= this.nextCaptureAt &&
+      (!this.node.paused || !this.result || this.refreshPending);
+  }
   constructor(readonly node: HTMLImageElement | HTMLVideoElement, private background?: BackgroundSurface) {
     node.dataset.localMediaCensorBuild = 'media-lifecycle-3';
     this.originalFilter = node.style.getPropertyValue('filter');
@@ -262,9 +271,14 @@ class MediaController {
       if (this.blacked) this.reveal();
     } else this.protect();
   }
-  private currentSource(): string { return this.node instanceof HTMLImageElement ? this.node.currentSrc || this.node.src : this.node.currentSrc || this.node.src || this.node.querySelector('source')?.src || ''; }
+  private currentSource(): string { return this.node instanceof HTMLImageElement ? this.node.currentSrc || this.node.src : videoSourceKey(this.node); }
+  private syncVideoSource(): void {
+    if (!(this.node instanceof HTMLVideoElement)) return;
+    const source = this.currentSource();
+    if (source !== this.source) { this.source = source; this.reset('source-change', false); }
+  }
   private key(): FrameKey { return { mediaSessionId: this.sessionId, epoch: this.epoch, sequence: ++this.sequence }; }
-  private reset(reason = 'state-change'): void {
+  private reset(reason = 'state-change', capture = true): void {
     this.finishImageLoad();
     this.lazyAheadStarted = false;
     this.node.dataset.localMediaCensorResetReason = reason;
@@ -277,13 +291,14 @@ class MediaController {
     const priorEpoch = this.epoch;
     this.epoch++;
     this.sequence = 0;
+    this.nextCaptureAt = 0;
     this.result = undefined;
     this.motion?.reset();
     this.overlay?.clear();
     if (this.inFlight) this.refreshPending = true;
     this.protect();
     void send({ type: 'reset-session', mediaSessionId: this.sessionId, epoch: priorEpoch }).catch(() => {});
-    if (this.node instanceof HTMLVideoElement && this.node.readyState >= 2) void this.captureVideo();
+    if (capture && this.node instanceof HTMLVideoElement && this.node.readyState >= 2) void this.captureVideo();
   }
   private maybeRefresh(): void {
     if (!this.refreshPending || this.inFlight || this.disposed) return;
@@ -341,6 +356,7 @@ class MediaController {
     try {
       await ensureOffscreen();
       const response = await send<{ ok: boolean; result?: AnalysisResult; error?: string }>({ type: 'analyze', frame: packet, settings });
+      this.syncVideoSource();
       // A source/load reset can retire a queued request while it is waiting.
       // Its failure must not block the replacement image's fresh epoch.
       if (this.disposed || packet.key.epoch !== this.epoch) return;
@@ -384,6 +400,7 @@ class MediaController {
     finally { this.inFlight = false; this.maybeRefresh(); }
   }
   private accept(result: AnalysisResult): void {
+    this.syncVideoSource();
     if (this.disposed || !eligible(this.node) || result.key.mediaSessionId !== this.sessionId || result.key.epoch !== this.epoch) return;
     if (this.result && result.key.sequence < this.result.key.sequence) return;
     if (result.settingsRevision < settings.revision) return;
@@ -510,6 +527,7 @@ class MediaController {
     const loop = (_now: number, metadata: VideoFrameCallbackMetadata) => {
       this.frameCallback = 0;
       if (this.disposed || video.paused || !eligible(video)) return;
+      this.syncVideoSource();
       if (!videoAdmitted(video)) { video.dataset.localMediaCensorStatus = 'capacity'; this.protect(); }
       else if (!this.corsRecovery) {
         const motion = this.ensureMotion();
@@ -526,9 +544,15 @@ class MediaController {
     this.frameCallback = video.requestVideoFrameCallback(loop);
   }
   private async captureVideo(mediaTime?: number): Promise<void> {
+    this.syncVideoSource();
     if (!eligible(this.node) || !(this.node instanceof HTMLVideoElement) || this.inFlight || this.corsRecovery || this.labelPending || this.node.readyState < 2) return;
+    if (!videoHasLiveSource(this.node)) { this.protect(); return; }
     if (!videoAdmitted(this.node)) { this.node.dataset.localMediaCensorStatus = 'capacity'; this.protect(); return; }
     const video = this.node;
+    const release = meetingPage ? meetingVideoWork.acquire(video, visibleMeetingVideos().filter(node => byNode.get(node)?.videoReadyForWork())) : undefined;
+    if (meetingPage && !release) {
+      video.dataset.localMediaCensorStatus = 'queued'; this.holdVideoMaskOrProtect(); return;
+    }
     const rate = settings.videoDetector === 'fast-box' ? 12 : ENGINE.modes[settings.performance].initialHz;
     this.nextCaptureAt = Date.now() + 1000 / rate;
     try {
@@ -571,11 +595,19 @@ class MediaController {
             });
         }
       } else this.holdVideoMaskOrProtect();
-    }
+    } finally { release?.(); }
   }
   private checkFreshness(): void {
     if (this.disposed || !this.node.isConnected) { this.dispose(); return; }
     if (!eligible(this.node)) { this.overlay?.clear(); if (this.blacked) this.reveal(); return; }
+    this.syncVideoSource();
+    if (this.node instanceof HTMLVideoElement && !videoHasLiveSource(this.node)) {
+      this.overlay?.clear(); this.protect(); this.node.dataset.localMediaCensorStatus = 'stream-ended'; return;
+    }
+    // Screen sharing can stop delivering frames while its contents are static.
+    // Polling also catches property-only source switches while paused/stalled.
+    if (this.node instanceof HTMLVideoElement && (meetingPage || !this.result) && this.videoReadyForWork() &&
+        this.node.readyState >= 2) void this.captureVideo();
     if (this.blacked && (!this.node.hasAttribute(tag) || getComputedStyle(this.node).filter !== 'brightness(0)')) this.protect();
     if (!(this.node instanceof HTMLVideoElement) || this.node.paused) return;
     if (!this.result) {
@@ -843,6 +875,7 @@ window.setInterval(reconcileVisibleImages, 1500);
 document.addEventListener('visibilitychange', requestImageWork);
 
 function videoAdmitted(video: HTMLVideoElement): boolean {
+  if (meetingPage) return visibleMeetingVideos().includes(video);
   if (video.paused) return true;
   const ranked = [...controllers].map(controller => controller.node)
     .filter((node): node is HTMLVideoElement => node instanceof HTMLVideoElement && node.isConnected && !node.paused)
@@ -856,6 +889,17 @@ function videoAdmitted(video: HTMLVideoElement): boolean {
     }).filter(item => item.area > 0).sort((a, b) => b.score - a.score)
     .slice(0, ENGINE.maxActiveVideos);
   return ranked.some(item => item.node === video);
+}
+
+function visibleMeetingVideos(): HTMLVideoElement[] {
+  if (document.hidden) return [];
+  return [...controllers].map(controller => controller.node)
+    .filter((node): node is HTMLVideoElement => node instanceof HTMLVideoElement && node.isConnected &&
+      eligible(node) && node.readyState >= 2 && videoHasLiveSource(node) && node.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }))
+    .filter(node => {
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && rect.right > 0 && rect.bottom > 0 && rect.left < innerWidth && rect.top < innerHeight;
+    });
 }
 
 function add(node: HTMLImageElement | HTMLVideoElement): void {

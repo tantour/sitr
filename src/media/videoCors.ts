@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Sitr contributors
 function sourceKey(video: HTMLVideoElement): string {
-  return JSON.stringify([video.getAttribute('src'), Array.from(video.querySelectorAll('source')).map(source => [source.src, source.type])]);
+  return JSON.stringify([Boolean(video.srcObject), video.getAttribute('src'), Array.from(video.querySelectorAll('source')).map(source => [source.src, source.type])]);
 }
 
 export function videoNeedsCors(video: HTMLVideoElement): boolean {
+  if (video.srcObject) return false;
   const url = video.currentSrc || video.src || video.querySelector('source')?.src;
   return Boolean(url && /^https?:\/\//i.test(url) && video.crossOrigin === null && new URL(url).origin !== location.origin);
 }
@@ -31,7 +32,7 @@ function loaded(video: HTMLVideoElement, event: 'loadedmetadata' | 'loadeddata',
 export async function recoverVideoCors(video: HTMLVideoElement, signal: AbortSignal,
   allowed: () => boolean): Promise<boolean> {
   const url = video.currentSrc || video.src || video.querySelector('source')?.src;
-  if (!url || !/^https?:\/\//i.test(url) || video.crossOrigin !== null ||
+  if (video.srcObject || !url || !/^https?:\/\//i.test(url) || video.crossOrigin !== null ||
       new URL(url).origin === location.origin) return false;
   const key = sourceKey(video);
   try {
@@ -40,7 +41,7 @@ export async function recoverVideoCors(video: HTMLVideoElement, signal: AbortSig
     const response = await fetch(url, { mode: 'cors', credentials: 'omit', headers: { Range: 'bytes=0-0' },
       signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]) });
     void response.body?.cancel().catch(() => {});
-    if (!response.ok || !allowed() || signal.aborted || sourceKey(video) !== key) return false;
+    if (!response.ok || video.srcObject || !allowed() || signal.aborted || sourceKey(video) !== key) return false;
   } catch { return false; }
 
   const time = video.currentTime, paused = video.paused, rate = video.playbackRate;
@@ -63,6 +64,7 @@ export async function recoverVideoCors(video: HTMLVideoElement, signal: AbortSig
     resume();
     return true;
   } catch {
+    if (video.srcObject) return false;
     if (video.crossOrigin === 'anonymous') {
       video.removeAttribute('crossorigin');
       if (sourceKey(video) === key && !signal.aborted && video.isConnected) {

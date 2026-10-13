@@ -44,6 +44,15 @@ analyses, not inference on every displayed frame. The mask renderer handles
 letterboxing, object-fit, effects, diagnostic outlines, and geometry updates.
 CSS backgrounds use a censored image copy with the original layout rules.
 
+Live video source identity includes `srcObject` and its video tracks, rather than
+only URL attributes. Frame callbacks, a watchdog, and result acceptance check for
+source changes before allowing an old mask to reveal a new stream. Ended or empty
+streams remain protected. Google Meet rotates bounded video capture work across
+visible tiles; paused, hidden, and offscreen tiles do not hold scheduling turns.
+The watchdog samples static presentations that are no longer producing callbacks.
+Other sites keep their existing two-playing-video selection. WebRTC streams bypass
+URL-based CORS recovery to preserve their connections.
+
 UI preferences are separate from inference settings. Theme/language changes
 do not restart analysis. Settings schema normalization migrates prior values and
 bounds model parameters. See `src/config/settings.ts`, `src/ui/localization.ts`,
