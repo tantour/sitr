@@ -32,7 +32,6 @@
             <label class="switch"><input id="enabled" type="checkbox" role="switch" aria-label="Enable protection" disabled><span class="switch-track"></span></label>
           </section>
           <div class="primary-controls">
-            <label class="filter-field" for="filter"><span>Cover people</span><select id="filter" disabled><option value="female">Female appearance</option><option value="male">Male appearance</option><option value="both">Everyone</option><option value="off">No one</option></select></label>
             <fieldset class="media-options"><legend>Apply to</legend>
               <label class="media-option"><input id="images" type="checkbox" disabled><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="9" r="1.5"/><path d="m4 17 5-5 3 3 2-2 6 5"/></svg><span>Images</span></label>
               <label class="media-option"><input id="videos" type="checkbox" disabled><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="m10 9 5 3-5 3V9Z"/></svg><span>Videos</span></label>
@@ -47,50 +46,71 @@
               <section id="imagePanel" class="appearance-group" role="tabpanel" aria-labelledby="imagesTab" tabindex="0">
                 <h2 class="settings-only">Image appearance</h2>
                 <p id="imagesDisabled" class="media-disabled" hidden>Image protection is off. Turn on Images above to apply these settings.</p>
-                      <label class="setting-field">Cover area <select id="imageCoverage"><option value="regions">Selected skin and hair</option><option value="whole-body">Whole body · separate face effect</option><option value="whole-body-face">Whole body · same effect on face</option></select></label>
-      <div id="imageRegionControls">
-        <div class="checkbox-pair"><label><input id="bodySkin" type="checkbox"> Body skin</label><label><input id="hair" type="checkbox"> Hair</label></div>
-        <label class="setting-field">Face effect <select id="imageRegionFaceEffect"><option value="show">Show face</option><option value="black">Black</option><option value="blur">Blur</option><option value="checkerboard">Checkerboard blur</option></select></label>
-        <p class="setting-hint">Selected skin and hair use a black mask.</p>
+
+                <div class="image-settings-bar">
+                  <label class="setting-field">Cover area <select id="imageCoverage"><option value="regions">Chosen areas</option><option value="whole-body">Whole body</option></select></label>
+                  <div class="bodypix-controls">
+                    <label class="bodypix-toggle"><input id="bodyPixEnabled" type="checkbox"><span><strong>Advanced segmentation</strong><small id="bodyPixModeHelp">Off · body skin together</small></span></label>
+                    <select id="imageBodyRegionMode" aria-label="Segmentation quality"><option value="off" hidden disabled>Off</option><option value="faster">Fast</option><option value="finer">Quality</option></select>
+                  </div>
+                </div>
+                <div id="personEditor" class="person-editor">
+                  <div class="gender-tabs" role="tablist" aria-label="Gender policies">
+                    <button id="femalePolicyTab" data-person-gender="female" type="button" role="tab" aria-selected="true" aria-controls="personPolicyPanel">Female</button>
+                    <button id="malePolicyTab" data-person-gender="male" type="button" role="tab" aria-selected="false" aria-controls="personPolicyPanel" tabindex="-1">Male</button>
+                  </div>
+                  <p id="personPolicySummary" class="setting-hint"></p>
+                  <div class="person-reset"><button id="showAllAreas" type="button">Show all</button><button id="hideAllAreas" type="button">Hide all</button><span id="personResetHelp" class="diagram-legend">Outlined: show · Filled: cover</span></div>
+                  <div id="personPolicyPanel" class="person-policy-panel" role="tabpanel" aria-labelledby="femalePolicyTab">
+                    <svg id="personDiagram" class="person-diagram" viewBox="0 0 200 400" role="group" aria-label="Choose an area on the person">
+                      <g data-person-area="hair" role="button" tabindex="0"><path d="M75 41C71 8 91 7 100 7C121 7 132 21 125 43L117 29C108 33 97 25 84 34L82 44Z"/></g>
+                      <g data-person-area="face" role="button" tabindex="0"><path d="M82 35Q99 22 118 34L117 52Q112 71 100 72Q86 71 81 52Z"/></g>
+                      <g data-person-area="body" role="button" tabindex="0"><path d="M90 71L110 71L114 85L135 92Q150 95 154 111L181 213L187 235Q185 252 174 249L167 235L169 220L135 126L126 165L138 186L139 240L136 359L153 377L152 384Q133 387 120 378L121 359L111 280L104 242L100 215L96 242L89 280L79 359L80 378Q67 387 48 384L47 377L64 359L61 240L62 186L74 165L65 126L31 220L33 235L26 249Q15 252 13 235L19 213L46 111Q50 95 65 92L86 85Z"/></g>
+                      <g data-person-area="neck" role="button" tabindex="0"><path d="M90 71L110 71L114 85Q100 95 86 85Z"/></g>
+                      <g data-person-area="torso" role="button" tabindex="0"><path d="M83 86Q100 97 117 86L133 94L132 137L126 164L136 183Q100 196 64 183L74 164L68 137L67 94Z"/></g>
+                      <g data-person-area="upper-arms" role="button" tabindex="0"><path d="M65 92Q50 95 46 111L32 158L49 165L66 121Z"/><path d="M135 92Q150 95 154 111L168 158L151 165L134 121Z"/></g>
+                      <g data-person-area="forearms" role="button" tabindex="0"><path d="M31 161L48 168L34 218L19 213Z"/><path d="M169 161L152 168L166 218L181 213Z"/></g>
+                      <g data-person-area="hands" role="button" tabindex="0"><path d="M18 217L33 221L31 242Q26 254 16 246L13 235Z"/><path d="M182 217L167 221L169 242Q174 254 184 246L187 235Z"/></g>
+                      <g data-person-area="thighs" role="button" tabindex="0"><path d="M64 187Q81 193 98 195L96 242L89 280L65 280L61 240Z"/><path d="M136 187Q119 193 102 195L104 242L111 280L135 280L139 240Z"/></g>
+                      <g data-person-area="lower-legs" role="button" tabindex="0"><path d="M65 284L89 284L86 323L79 359L64 359L60 319Z"/><path d="M135 284L111 284L114 323L121 359L136 359L140 319Z"/></g>
+                      <g data-person-area="feet" role="button" tabindex="0"><path d="M64 363L80 363L80 378Q67 387 48 384L47 377Z"/><path d="M136 363L120 363L120 378Q133 387 152 384L153 377Z"/></g>
+                    </svg>
+                    <div class="person-area-controls">
+                      <label for="personAreaSelect" class="area-picker-label">Choose area</label>
+                      <select id="personAreaSelect" aria-label="Choose area">
+                        <option value="face">Face</option><option value="hair">Hair</option><option value="body">Body skin</option><option value="neck">Neck</option><option value="torso">Torso (chest and belly)</option><option value="upper-arms">Upper arms</option><option value="forearms">Forearms</option><option value="hands">Hands</option><option value="thighs">Thighs</option><option value="lower-legs">Lower legs</option><option value="feet">Feet</option><option value="other-skin">Unrecognized skin</option>
+                      </select>
+                      <h3 id="personAreaTitle">Face</h3><p id="personCurrentAction" class="current-area-action"></p>
+                      <div class="area-actions" role="group" aria-label="Area action">
+                        <button data-person-action="show" type="button">Show</button><button data-person-action="hide" type="button">Hide</button><button data-person-action="black" type="button">Black</button><button data-person-action="blur" type="button">Blur</button><button data-person-action="checkerboard" type="button">Pixelate</button>
+                      </div>
+      <div id="imageFaceEffectOptions" class="inline-face-effect" hidden>
+        <label class="range-field">Face effect strength <output id="imageFaceEffectIntensityValue"></output><input id="imageFaceEffectIntensity" type="range" min="8" max="64" step="1"></label>
+        <label class="check-option"><input id="imageFaceEffectGrayscale" type="checkbox"> Grayscale face effect</label>
       </div>
+                      <p id="personAreaHelp" class="setting-hint"></p>
+                    </div>
+                  </div>
+                </div>
+                <details id="imageAdvancedOptions" class="effect-details image-advanced"><summary>Image options</summary>
+                  <p class="setting-hint">Advanced segmentation is image-only and adds processing time. Quality is slower but gives finer detail. Overlapping parts can be misclassified.</p>
+                  <p class="setting-hint">Torso includes chest and belly. Unrecognized skin has its own choice in the area menu.</p>
+                  <p id="wholeBodyOverrideHelp" class="setting-hint" hidden>Whole-body mode covers the silhouette of people with hidden areas. Choose Chosen areas to use the diagram literally.</p>
       <div id="imageWholeBodyControls" hidden>
         <label class="setting-field">Body effect <select id="imageWholeBodyEffect"><option value="black">Black</option><option value="blur">Blur</option><option value="checkerboard">Checkerboard blur</option></select></label>
-        <label id="imageWholeBodyFaceControl" class="setting-field">Face effect <select id="imageWholeBodyFaceEffect"><option value="show">Show face</option><option value="black">Black</option><option value="blur">Blur</option><option value="checkerboard">Checkerboard blur</option></select></label>
         <p id="imageFaceOpeningHelp" class="setting-hint">A face stays covered if it cannot be matched to one person.</p>
         <details id="imageEffectOptions" class="effect-details" hidden><summary>Adjust body effect</summary>
           <label class="range-field">Body effect strength <output id="imageEffectIntensityValue"></output><input id="imageEffectIntensity" type="range" min="8" max="64" step="1"></label>
           <label class="check-option"><input id="imageEffectGrayscale" type="checkbox"> Grayscale effect</label>
         </details>
       </div>
-      <details id="imageFaceEffectOptions" class="effect-details" hidden><summary>Adjust face effect</summary>
-        <label class="range-field">Face effect strength <output id="imageFaceEffectIntensityValue"></output><input id="imageFaceEffectIntensity" type="range" min="8" max="64" step="1"></label>
-        <label class="check-option"><input id="imageFaceEffectGrayscale" type="checkbox"> Grayscale face effect</label>
-      </details>
-      <details id="skinThresholdSettings" class="skin-threshold-settings">
-        <summary>Skin exposure rules</summary>
-        <p class="setting-hint">Applies to your selected people. Body skin is measured as a share of the detected person; face skin is excluded.</p>
-        <div class="skin-rule">
-          <label class="check-option"><input id="imageSkinThresholdEnabled" type="checkbox"> Black high-skin bodies</label>
-          <div id="imageSkinThresholdControls" hidden>
-            <label class="setting-field">Skin above (%) <input id="imageSkinThresholdPercent" type="number" min="0" max="100" step="1" required></label>
-            <label class="check-option"><input id="imageSkinThresholdIncludeFace" type="checkbox"> Include face in blackout</label>
-            <p class="setting-hint">Matched faces stay visible when this is off. This rule uses black, regardless of the body effect.</p>
-          </div>
-        </div>
-        <div class="skin-rule">
-          <label class="check-option"><input id="imageGroupSkinThresholdEnabled" type="checkbox"> Black image for high-skin groups</label>
-          <div id="imageGroupSkinThresholdControls" hidden>
-            <label class="setting-field">Skin at least (%) <input id="imageGroupSkinThresholdPercent" type="number" min="0" max="100" step="1" required></label>
-            <label class="setting-field">More than (people) <input id="imageGroupSkinPeopleLimit" type="number" min="1" max="19" step="1" required></label>
-            <p class="setting-hint">Black the whole image when more than this many selected people reach the skin percentage.</p>
-          </div>
-        </div>
-      </details>
+                </details>
               </section>
               <section id="videoPanel" class="appearance-group" role="tabpanel" aria-labelledby="videosTab" tabindex="0" hidden>
                 <h2 class="settings-only">Video appearance</h2>
                 <p id="videosDisabled" class="media-disabled" hidden>Video protection is off. Turn on Videos above to apply these settings.</p>
-                      <label class="setting-field">Effect <select id="videoEffect"><option value="black">Black</option><option value="blur">Blur</option><option value="checkerboard">Checkerboard blur</option></select></label>
+                <label class="setting-field">Female <select id="videoPolicy-female"><option value="show">Show</option><option value="black">Black</option><option value="blur">Blur</option><option value="checkerboard">Pixelate</option></select></label>
+                <label class="setting-field">Male <select id="videoPolicy-male"><option value="show">Show</option><option value="black">Black</option><option value="blur">Blur</option><option value="checkerboard">Pixelate</option></select></label>
       <details id="videoEffectOptions" class="effect-details" hidden><summary>Adjust video effect</summary>
         <label class="range-field">Effect strength <output id="videoEffectIntensityValue"></output><input id="videoEffectIntensity" type="range" min="8" max="64" step="1"></label>
         <label class="check-option"><input id="videoEffectGrayscale" type="checkbox"> Grayscale effect</label>
@@ -140,6 +160,7 @@
 <section class="settings-panel settings-only" data-settings-panel="diagnostics" hidden><h2>Diagnostics</h2><div class="tech-body">
   <label id="faceAssociationModeControl">Face/person matching <select id="faceAssociationMode"><option value="overlap">Overlap score (stricter)</option><option value="center">Face-box center point</option></select></label>
   <label><input id="debugOverlay" type="checkbox"> Show AI debug outlines, face boxes, and gender estimates</label>
+  <p class="muted">Advanced segmentation colors: torso red, upper arms blue, forearms purple, hands yellow, thighs pink, lower legs green, feet cyan, neck orange. Unrecognized skin follows its saved choice.</p>
   <label><input id="faceAssociation" type="checkbox"> Face association diagnostics</label>
   <details>
     <summary>Advanced AI thresholds</summary>

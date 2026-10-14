@@ -28,7 +28,9 @@ export async function verifyRelease() {
     'LICENSE', 'NOTICE.md', 'PRIVACY.md', 'SOURCE.md', 'LICENSES/ONNX-Runtime-MIT.txt',
     'LICENSES/ONNX-Runtime-ThirdPartyNotices.txt', 'LICENSES/DEPENDENCIES.txt',
     'docs/images/popup.png', 'docs/images/popup-en-dark.png', 'docs/images/popup-ar-light.png',
-    'docs/images/coverage-example.png', 'docs/images/settings-desktop.png'];
+    'docs/images/coverage-example.png', 'docs/images/settings-desktop.png',
+    'docs/images/popup-areas.png', 'docs/images/popup-basic.png', 'docs/images/popup-face.png',
+    'docs/images/popup-video.png', 'docs/images/settings-ar.png'];
   for (const file of required) assert((await stat(resolve(directory, file))).size > 0, `Missing or empty ${file}`);
   await verifyModels(resolve(directory, 'models'));
   const expected = JSON.parse(await readFile(resolve(root, 'models/artifacts.json'), 'utf8'));

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Sitr contributors
-import type { GenderModel, Label, Settings, WholeBodyEffect } from '../config/settings';
+import type { BodyRegion, BodyRegionMode, GenderModel, Label, Settings, WholeBodyEffect } from '../config/settings';
 
 export interface FrameKey { mediaSessionId: string; epoch: number; sequence: number }
 export interface Rect { x: number; y: number; width: number; height: number }
@@ -50,6 +50,21 @@ export interface Track {
   velocityY: number;
 }
 export interface Exposure { ratio: number; reliable: boolean; ownedPixels: number; ambiguousFraction: number }
+export interface BodyRegionDiagnostics {
+  model: BodyRegionMode;
+  status: 'disabled' | 'skipped-video' | 'skipped-coverage' | 'skipped-no-skin' | 'ready' | 'cache' | 'fallback';
+  backend?: string;
+  inputSize?: number;
+  stride?: number;
+  skinPixels: number;
+  unknownSkinPixels: number;
+  allowedSkinPixels: number;
+  coveredSkinPixels: number;
+  femaleAllowedRegions: BodyRegion[];
+  maleAllowedRegions: BodyRegion[];
+  error?: string;
+  policies?: Settings['personPolicies'];
+}
 export interface TrackObservation {
   id: string;
   box: Rect;
@@ -77,19 +92,24 @@ export interface AnalysisResult {
   staticMask?: Uint8Array;
   /** Forced black coverage, rendered after all optional blur/face effects. */
   blackMask?: Uint8Array;
-  trackMasks?: Array<{ id: string; alpha: Uint8Array }>;
+  trackMasks?: Array<{ id: string; alpha: Uint8Array; effect?: AnalysisResult['effect'] }>;
   effect?: { kind: WholeBodyEffect; intensity: number; grayscale: boolean };
   faceMask?: Uint8Array;
   faceEffect?: { kind: WholeBodyEffect; intensity: number; grayscale: boolean };
+  faceLayers?: Array<{ alpha: Uint8Array; effect: NonNullable<AnalysisResult['faceEffect']> }>;
   tracks: Array<{ id: string; box: Rect; label: Label; labelUsable: boolean; labelSource: Track['labelSource']; genderConfidence: number; exposure: Exposure }>;
   faceAssociations?: Array<{ faceIndex: number; trackId?: string; ambiguous: boolean }>;
   debugPersonMasks?: Array<{ id: string; box: Rect; mask: Uint8Array; width: number; height: number; label: Label; labelUsable: boolean; labelSource: Track['labelSource']; genderConfidence: number }>;
   debugFaces?: Array<{ box: Rect; score: number; trackId?: string; ambiguous: boolean }>;
   genderDiagnostics?: { model: GenderModel; people?: number; faces: number; associated: number;
     faceGenderAttempts: number; bodyGenderAttempts: number; attempted: number; accepted: number; error?: string };
+  bodyRegionDiagnostics?: BodyRegionDiagnostics;
+  debugBodyRegions?: { labels: Uint8Array; width: number; height: number };
   timingsMs?: { acquire: number; queue?: number; modelInit: number; person: number; personPreprocess: number; personRun: number; personDecode: number;
     semantic: number; tracking: number; face: number; gender: number; composition: number; render: number;
     semanticPreprocess?: number; semanticRun?: number; semanticDecode?: number;
+    bodyRegions?: number; bodyRegionPreprocess?: number; bodyRegionRun?: number; bodyRegionDecode?: number;
+    bodyRegionBackend?: string; bodyRegionModel?: BodyRegionMode;
     facePreprocess?: number; faceRun?: number; faceDecode?: number;
     genderPreprocess?: number; genderRun?: number; genderDecode?: number;
     total: number; backend: string; faceBackend?: string; genderBackend?: string; semanticBackend: string;

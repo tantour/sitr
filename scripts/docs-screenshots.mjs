@@ -13,27 +13,40 @@ if (!process.argv.includes('--reuse-ui')) {
   assert.equal(check.status, 0, 'UI checks must pass before publishing screenshots');
 }
 await mkdir(resolve(root, 'docs/images'), { recursive: true });
-for (const name of ['popup.png', 'popup-en-dark.png', 'popup-ar-light.png', 'settings-desktop.png'])
-  await cp(resolve(root, '.impeccable/review', name), resolve(root, 'docs/images', name));
+const uiImages = {
+  'person-editor-controls.png': 'popup.png',
+  'person-editor-popup.png': 'popup-areas.png',
+  'person-editor-face.png': 'popup-face.png',
+  'person-editor-off.png': 'popup-basic.png',
+  'person-editor-video.png': 'popup-video.png',
+  'person-editor-en-dark.png': 'popup-en-dark.png',
+  'person-editor-ar-light.png': 'popup-ar-light.png',
+  'person-editor-desktop.png': 'settings-desktop.png',
+  'person-editor-ar-narrow.png': 'settings-ar.png',
+};
+for (const [source, target] of Object.entries(uiImages))
+  await cp(resolve(root, '.impeccable/review', source), resolve(root, 'docs/images', target));
 const photo = await readFile(resolve(root, 'tests/fixtures/bus.jpg'));
 const server = createServer((request, response) => {
   if (request.url === '/bus.jpg') { response.writeHead(200, { 'content-type': 'image/jpeg' }); response.end(photo); return; }
   response.writeHead(200, { 'content-type': 'text/html' });
-  response.end('<!doctype html><html lang="en"><meta charset="utf-8"><title>Sitr coverage example</title><body style="margin:0;padding:28px;background:#eef3ee;font:16px system-ui;color:#243b2d"><h1 style="font-size:24px;margin:0 0 8px">Local whole-person coverage</h1><p style="margin:0 0 22px">Everyone selected · black silhouettes including faces</p><img id="example" src="/bus.jpg" width="480" height="640" style="display:block"><p style="font-size:12px;margin-bottom:0">Local Ultralytics bus fixture · illustration of rendering, not an accuracy benchmark.</p></body></html>');
+  response.end('<!doctype html><html lang="en"><meta charset="utf-8"><title>Sitr coverage example</title><body style="margin:0;padding:28px;background:#eef3ee;font:16px system-ui;color:#243b2d"><h1 style="font-size:24px;margin:0 0 8px">Local whole-person coverage</h1><p style="margin:0 0 22px">Female and Male: Hide all · Whole body · black face effect</p><img id="example" src="/bus.jpg" width="480" height="640" style="display:block"><p style="font-size:12px;margin-bottom:0">Local Ultralytics bus fixture · illustration of rendering, not an accuracy benchmark.</p></body></html>');
 });
 await new Promise(done => server.listen(0, '127.0.0.1', done));
 const profile = await mkdtemp(resolve(tmpdir(), 'sitr-docs-'));
 let browser;
 try {
   browser = await chromium.launchPersistentContext(profile, { headless: true, channel: 'chromium',
-    viewport: { width: 850, height: 800 }, args: [`--disable-extensions-except=${resolve(root, 'dist')}`, `--load-extension=${resolve(root, 'dist')}`] });
+    viewport: { width: 850, height: 860 }, args: [`--disable-extensions-except=${resolve(root, 'dist')}`, `--load-extension=${resolve(root, 'dist')}`] });
   const worker = browser.serviceWorkers()[0] ?? await browser.waitForEvent('serviceworker');
   const page = await browser.newPage();
   await page.goto(new URL('popup.html', worker.url()).href);
   await page.waitForFunction(() => !document.body.classList.contains('loading'));
   await page.evaluate(async () => {
+    const hidden = () => ({ skin: Object.fromEntries(['torso','upper-arms','forearms','hands','thighs','lower-legs','feet','neck'].map(area => [area,'hide'])),
+      hair: 'hide', otherSkin: 'hide', face: 'black', video: 'black' });
     const result = await chrome.runtime.sendMessage({ type: 'set-settings', patch: {
-      filter: 'both', imageCoverage: 'whole-body-face', imageWholeBodyEffect: 'black', automaticGender: false } });
+      personPolicies: { female: hidden(), male: hidden() }, imageCoverage: 'whole-body', imageWholeBodyEffect: 'black', automaticGender: false } });
     if (result.error) throw new Error(result.error);
   });
   await page.goto(`http://127.0.0.1:${server.address().port}/`);

@@ -39,4 +39,11 @@ describe('Arabic UI language', () => {
     expect(t('Skin at least (%)')).toContain('لا تقل');
     expect(t('More than (people)')).toContain('أكبر من');
   });
+  it('translates BodyPix model choices and allowed areas', () => {
+    setLanguage('ar');
+    expect(t('Allowed skin areas · images only')).toContain('للصور فقط');
+    expect(t('Slower · higher quality · stride 8')).toContain('أبطأ');
+    expect(t('Torso (chest and belly)')).toContain('الصدر والبطن');
+    expect(t('Thighs')).toBe('الفخذان');
+  });
 });

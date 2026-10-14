@@ -29,10 +29,15 @@ try {
     viewport:{width:1100,height:800},
     args:[`--disable-extensions-except=${resolve('dist')}`,`--load-extension=${resolve('dist')}`] });
   const worker = browser.serviceWorkers()[0] ?? await browser.waitForEvent('serviceworker');
-  await worker.evaluate(async () => {
-    const current = (await chrome.storage.local.get('settings')).settings || {};
-    await chrome.storage.local.set({settings:{...current,filter:'both',automaticGender:false,revision:(current.revision||0)+1}});
-  });
+  // Wait for installation/migration and use the real settings write path.
+  // Direct storage writes immediately after startup can race initialization.
+  const setup = await browser.newPage();
+  await setup.goto(new URL('popup.html', worker.url()).href);
+  await setup.locator('#saveStatus').filter({hasText:'Saved automatically'}).waitFor();
+  const configured = await setup.evaluate(async () => chrome.runtime.sendMessage({type:'set-settings',patch:{filter:'both',automaticGender:false}}));
+  assert.equal(configured.filter,'both'); assert.equal(configured.automaticGender,false);
+  assert.equal(configured.personPolicies.male.skin.torso,'hide');
+  await setup.close();
   const page = await browser.newPage();
   const errors=[]; page.on('pageerror', error=>errors.push(error.message));
   await page.goto(`http://127.0.0.1:${server.address().port}/`);
@@ -49,10 +54,11 @@ try {
       return black;
     };
     return {masked:await count(url),original:await count('/photo.jpg'),size:css.backgroundSize,position:css.backgroundPosition,
+      diagnostic: { ...element.dataset },
       multiple:getComputedStyle(document.getElementById('multiple')).backgroundImage,
       offscreen:document.getElementById('later').dataset.localMediaCensorBackground};
   });
-  assert(state.masked>state.original,'Background must contain actual censor pixels');
+  assert(state.masked>state.original,`Background must contain actual censor pixels: ${JSON.stringify(state)}`);
   assert.equal(state.size,'cover');assert.equal(state.position,'25% 70%');
   assert.equal((state.multiple.match(/blob:/g)||[]).length,2);assert(state.multiple.includes('linear-gradient'));
   assert.equal(state.offscreen,'pending');

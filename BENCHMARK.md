@@ -162,3 +162,20 @@ The prior face association combined face-mask coverage with a shoulder-neighborh
 The body-only modes do not invoke FastFace. Packaged browser runs with image skin-and-hair coverage and fast-box video used Paddle-only images plus Intel-only video, then Intel-only images plus Paddle-only video. Each selected model made three body attempts and zero face-gender attempts; neither medium detected a face in those runs. With whole-body image coverage, image face detection still located two faces for mask openings while the body-only image mode made zero face-gender attempts. Switching body → face → body on active media returned both image and video to zero face-gender attempts. The debug overlay now identifies such face boxes as locations only, and an idle FastFace session is released when both media modes are body-only.
 
 The raw model outputs are a separate accuracy limitation. On the repo's three clear bus-person crops, Intel assigned one male-looking person a female score of 0.945, while Paddle's male scores for two people were below the default 0.85 acceptance threshold. These are body-model predictions, not face-model results. The default unknown-person policy keeps low-confidence predictions censored; an accepted wrong prediction can still choose the wrong filter outcome. This fixture is too small to calibrate new thresholds or establish reliability.
+
+## Optional BodyPix image regions (2026-10-14)
+
+The optional image-only BodyPix path retains the existing MediaPipe skin and YOLO ownership models. It adds learned body-part labels without pose decoding. Both configurations use official Google MobileNet 0.75 weights, translated to FP32 ONNX with foreground/part heads only. Each file is 4,917,955 bytes (about 4.92 MB); the distribution adds about 9.84 MB. Only the selected variant loads.
+
+The packaged-worker probe ran in headless Chromium 153 on the i5-8250U/UHD 620 machine with ANGLE D3D11, ONNX Runtime Web 1.22.0, a 320-pixel bus image, CPU semantic inference, two WASM threads, automatic gender off, and debug maps enabled. It awaited GPU output readback. Three warm, visually identical inputs changed one padding byte to bypass image caching.
+
+| BodyPix configuration | Warm total BodyPix stage samples | Median | First BodyPix stage including initialization |
+|---|---|---|---|
+| Faster, stride 16, 257 input, WebGPU | 51 / 34 / 32 ms | 34 ms | 1,855 ms |
+| Finer, stride 8, 321 input, WebGPU | 81 / 94 / 96 ms | 94 ms | 347 ms |
+
+These are measured additional stage costs, including preprocessing, inference/readback, and skin-only decoding. They are not paired full-extension throughput percentages or a sustained benchmark. Cold figures depend on shader/browser caches and test order; the table does not establish that the finer model starts faster. CPU fallback is supported and may cost more. Skin/part errors and overlap mistakes remain possible; torso does not separate chest from belly.
+
+The probe verified both packaged variants on WASM and WebGPU preference, independent male/female allowances, cached live policy edits, duplicate reuse, zero BodyPix inference for video, and conservative skin coverage after missing-model failure. It is a functional check, not an anatomical accuracy benchmark. Logs remain local under `.cache/body-regions-browser.json`.
+
+Reproduce after building with `node scripts/body-regions-probe.mjs`. The existing photo-grid benchmark also accepts `PERF_BODY_REGIONS=off`, `faster`, or `finer`, and prints model/backend/fallback counts and BodyPix stage timings. Use separate runs with the same fixtures and settings for comparisons. [Controls and diagnostics](docs/BODY-REGIONS.md) explain the saved policies and timing fields.

@@ -16,9 +16,23 @@ export type ImageCoverage = 'regions' | 'whole-body' | 'whole-body-face';
 export type WholeBodyEffect = 'black' | 'blur' | 'checkerboard';
 export type FaceEffect = 'show' | WholeBodyEffect;
 export type ImageDetectionGate = 'any' | 'face' | 'person' | 'either' | 'both';
+export type BodyRegionMode = 'off' | 'faster' | 'finer';
+export const BODY_REGIONS = ['torso', 'upper-arms', 'forearms', 'hands', 'thighs', 'lower-legs', 'feet', 'neck'] as const;
+export type BodyRegion = typeof BODY_REGIONS[number];
+export type SkinAction = 'show' | 'hide';
+export type PersonArea = BodyRegion | 'hair' | 'face' | 'body' | 'other-skin';
+export interface PersonPolicy {
+  skin: Record<BodyRegion, SkinAction>;
+  otherSkin: SkinAction;
+  hair: SkinAction;
+  face: FaceEffect;
+  faceStrength?: number;
+  video: FaceEffect;
+}
+export type PersonPolicies = Record<'female' | 'male', PersonPolicy>;
 
 export interface Settings {
-  schemaVersion: 16;
+  schemaVersion: 19;
   revision: number;
   enabled: boolean;
   images: boolean;
@@ -26,9 +40,14 @@ export interface Settings {
   videoPlayback: VideoPlayback;
   videoDetector: VideoDetector;
   filter: FilterMode;
+  /** Legacy fields remain readable; diagram policies take precedence once edited. */
+  personPolicies?: PersonPolicies;
   imageUnknown: UnknownPolicy;
   videoUnknown: UnknownPolicy;
   bodySkin: boolean;
+  imageBodyRegionMode: BodyRegionMode;
+  imageFemaleAllowedRegions: BodyRegion[];
+  imageMaleAllowedRegions: BodyRegion[];
   hair: boolean;
   faceSkin: boolean;
   imageCoverage: ImageCoverage;
@@ -76,7 +95,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  schemaVersion: 16,
+  schemaVersion: 19,
   revision: 0,
   enabled: true,
   images: true,
@@ -87,6 +106,9 @@ export const DEFAULT_SETTINGS: Settings = {
   imageUnknown: 'selected',
   videoUnknown: 'selected',
   bodySkin: true,
+  imageBodyRegionMode: 'off',
+  imageFemaleAllowedRegions: [],
+  imageMaleAllowedRegions: [],
   hair: true,
   faceSkin: false,
   imageCoverage: 'regions',
@@ -171,9 +193,29 @@ export function siteIsExcepted(hostname: string, exceptions: string[]): boolean 
 export function normalizeSettings(value: unknown): Settings {
   const raw = (value && typeof value === 'object' ? value : {}) as Partial<Settings>;
   const merged = { ...DEFAULT_SETTINGS, ...raw };
-  merged.schemaVersion = 16;
-  for (const field of ['imageSkinThresholdEnabled', 'imageSkinThresholdIncludeFace', 'imageGroupSkinThresholdEnabled'] as const)
-    merged[field] = merged[field] === true;
+  merged.schemaVersion = 19;
+  if (raw.personPolicies && typeof raw.personPolicies === 'object') {
+    const policies = {} as PersonPolicies;
+    for (const gender of ['female', 'male'] as const) {
+      const value = raw.personPolicies[gender];
+      const action = (input: unknown): SkinAction => input === 'show' ? 'show' : 'hide';
+      const effect = (input: unknown): FaceEffect => ['show', 'black', 'blur', 'checkerboard'].includes(String(input)) ? input as FaceEffect : 'show';
+      policies[gender] = { skin: Object.fromEntries(BODY_REGIONS.map(area => [area, action(value?.skin?.[area])])) as PersonPolicy['skin'],
+        otherSkin: action(value?.otherSkin), hair: action(value?.hair), face: effect(value?.face), video: effect(value?.video),
+        ...(value?.faceStrength !== undefined && Number.isFinite(Number(value.faceStrength))
+          ? { faceStrength: Math.max(8, Math.min(64, Math.round(Number(value.faceStrength)))) } : {}) };
+    }
+    merged.personPolicies = policies;
+  } else delete merged.personPolicies;
+  if (!['off', 'faster', 'finer'].includes(merged.imageBodyRegionMode)) merged.imageBodyRegionMode = 'off';
+  for (const field of ['imageFemaleAllowedRegions', 'imageMaleAllowedRegions'] as const) {
+    const allowed = merged[field];
+    merged[field] = Array.isArray(allowed) ? BODY_REGIONS.filter(region => allowed.includes(region)) : [];
+  }
+  // Removed exposure rules must not survive invisibly in saved profiles.
+  merged.imageSkinThresholdEnabled = false;
+  merged.imageGroupSkinThresholdEnabled = false;
+  merged.imageSkinThresholdIncludeFace = false;
   for (const field of ['imageSkinThresholdPercent', 'imageGroupSkinThresholdPercent'] as const) {
     const value = Number(merged[field]);
     merged[field] = Number.isFinite(value) ? Math.max(0, Math.min(100, Math.round(value))) : DEFAULT_SETTINGS[field];
@@ -193,7 +235,8 @@ export function normalizeSettings(value: unknown): Settings {
   if (!['segment', 'fast-box'].includes(merged.videoDetector)) merged.videoDetector = DEFAULT_SETTINGS.videoDetector;
   for (const field of ['imageGenderModel', 'videoGenderModel'] as const)
     if (!['face', 'body-intel', 'body-paddle', 'face-intel', 'face-paddle'].includes(merged[field])) merged[field] = DEFAULT_SETTINGS[field];
-  if (!['regions', 'whole-body', 'whole-body-face'].includes(merged.imageCoverage)) merged.imageCoverage = DEFAULT_SETTINGS.imageCoverage;
+  if (merged.imageCoverage === 'whole-body-face') merged.imageCoverage = 'whole-body';
+  if (!['regions', 'whole-body'].includes(merged.imageCoverage)) merged.imageCoverage = DEFAULT_SETTINGS.imageCoverage;
   if (!['any', 'face', 'person', 'either', 'both'].includes(merged.imageDetectionGate)) merged.imageDetectionGate = DEFAULT_SETTINGS.imageDetectionGate;
   if (raw.imageRegionFaceEffect === undefined && raw.faceSkin === true) merged.imageRegionFaceEffect = 'black';
   for (const field of ['imageRegionFaceEffect', 'imageWholeBodyFaceEffect'] as const)

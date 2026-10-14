@@ -9,7 +9,7 @@ import { verifyRelease } from './verify-release.mjs';
 
 await verifyRelease();
 const version = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')).version;
-const output = resolve(root, 'release');
+const output = resolve(root, 'release', `v${version}`);
 await mkdir(output, { recursive: true });
 let checksums = '';
 async function archive(name, files) {
@@ -65,4 +65,5 @@ for (const name of new Set(candidates)) {
 }
 await archive(`${prefix}-source.zip`, source);
 await writeFile(resolve(output, 'SHA256SUMS.txt'), checksums);
-console.log('Publish all three ZIP files and SHA256SUMS.txt together. See docs/RELEASING.md.');
+await writeFile(resolve(output, 'RELEASE_NOTES.md'), await readFile(resolve(root, 'docs', `RELEASE-NOTES-${version}.md`)));
+console.log(`Prepared ${output}. Publish all three ZIP files and SHA256SUMS.txt together. See docs/RELEASING.md.`);

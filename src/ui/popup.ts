@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Sitr contributors
-import { normalizeSettings, normalizeSiteException, resolveYoloSize, siteIsExcepted, type Settings } from '../config/settings';
+import { normalizeSettings, normalizeSiteException, resolveYoloSize, siteIsExcepted, type BodyRegion, type Settings } from '../config/settings';
 import { mediaSummary, number, percent, t } from './localization';
 import { initializeUiPreferences } from './preferences';
+import { initializePersonEditor } from './personEditor';
+import { editablePolicies, genderPolicy, hasImageCoverage } from '../config/personPolicy';
 
-const fields = ['enabled', 'images', 'videos', 'videoPlayback', 'videoDetector', 'filter', 'bodySkin', 'hair', 'imageCoverage', 'imageDetectionGate', 'imageWholeBodyEffect', 'imageRegionFaceEffect', 'imageWholeBodyFaceEffect', 'videoEffect', 'imageEffectGrayscale', 'imageFaceEffectGrayscale', 'videoEffectGrayscale', 'automaticGender', 'imageGenderModel', 'videoGenderModel', 'faceAssociation', 'faceAssociationMode', 'debugOverlay', 'imageUnknown', 'videoUnknown', 'performance', 'onnxThreads'] as const;
-const skinToggleFields = ['imageSkinThresholdEnabled', 'imageSkinThresholdIncludeFace', 'imageGroupSkinThresholdEnabled'] as const;
-const skinNumberFields = ['imageSkinThresholdPercent', 'imageGroupSkinThresholdPercent', 'imageGroupSkinPeopleLimit'] as const;
+const fields = ['enabled', 'images', 'videos', 'videoPlayback', 'videoDetector', 'imageCoverage', 'imageDetectionGate', 'imageWholeBodyEffect', 'imageEffectGrayscale', 'imageFaceEffectGrayscale', 'videoEffectGrayscale', 'automaticGender', 'imageGenderModel', 'videoGenderModel', 'faceAssociation', 'faceAssociationMode', 'debugOverlay', 'imageUnknown', 'videoUnknown', 'performance', 'onnxThreads'] as const;
+const skinToggleFields = ['imageBodyRegionMode'] as const;
 const thresholdFields = ['yoloConfidence', 'faceDetectionConfidence', 'minFaceSizePx', 'genderConfidence', 'smallFaceCutoffPx', 'smallFaceConfidence', 'faceCoverage', 'faceMargin', 'centerMaskConfidence'] as const;
 const expansionFields = ['imageExpansion', 'videoExpansion'] as const;
-const effectIntensityFields = ['imageEffectIntensity', 'videoEffectIntensity', 'imageFaceEffectIntensity'] as const;
+const effectIntensityFields = ['imageEffectIntensity', 'videoEffectIntensity'] as const;
 const resolutionSteps = {
   yoloImageSize: ['auto', 256, 320, 416],
   yoloVideoSize: ['auto', 256, 320, 416],
@@ -19,6 +20,10 @@ const resolutionSteps = {
 type PageStatus = { version: string; media: number; analyzed: number; detected: number };
 const settingsView = location.hash.startsWith('#settings');
 let settings: Settings;
+const personEditor = initializePersonEditor(() => settings, async (patch, control) => {
+  const saved = await persist(patch, control);
+  updateMaskControls(); updateProtectionState(); return saved;
+});
 let currentHost: string | undefined;
 let activeTabId: number | undefined;
 let pageSummary = 'Checking this page…';
@@ -57,7 +62,6 @@ function showSettingsSection(): void {
 function initializeNavigation(): void {
   if (settingsView) {
     document.body.dataset.view = 'settings';
-    (element('skinThresholdSettings') as HTMLDetailsElement).open = true;
     for (const id of ['imagePanel', 'videoPanel']) {
       const panel = element(id);
       panel.hidden = false;
@@ -94,14 +98,12 @@ function initializeNavigation(): void {
 function updateMaskControls(): void {
   const coverage = select('imageCoverage').value;
   const whole = coverage !== 'regions';
-  element('imageRegionControls').hidden = whole;
+  element('personEditor').hidden = false;
+  element('wholeBodyOverrideHelp').hidden = !whole;
   element('imageWholeBodyControls').hidden = !whole;
-  element('imageWholeBodyFaceControl').hidden = coverage !== 'whole-body';
   element('imageFaceOpeningHelp').hidden = coverage !== 'whole-body';
-  const faceEffect = select(whole ? 'imageWholeBodyFaceEffect' : 'imageRegionFaceEffect').value;
-  element('imageFaceEffectOptions').hidden = coverage === 'whole-body-face' || faceEffect === 'show' || faceEffect === 'black';
   element('imageEffectOptions').hidden = select('imageWholeBodyEffect').value === 'black';
-  element('videoEffectOptions').hidden = select('videoEffect').value === 'black';
+  element('videoEffectOptions').hidden = ![genderPolicy(settings, 'female').video, genderPolicy(settings, 'male').video].some(effect => effect === 'blur' || effect === 'checkerboard');
   const fastVideo = select('videoDetector').value === 'fast-box';
   element('yoloVideoSizeControl').hidden = fastVideo;
   element('faceAssociationModeControl').hidden = fastVideo;
@@ -110,21 +112,23 @@ function updateMaskControls(): void {
     : "Video covers selected people's full silhouettes, including faces. Fast motion can still outrun a mask.");
   element('imagesDisabled').hidden = input('images').checked;
   element('videosDisabled').hidden = input('videos').checked;
-  element('imageSkinThresholdControls').hidden = !input('imageSkinThresholdEnabled').checked;
-  element('imageGroupSkinThresholdControls').hidden = !input('imageGroupSkinThresholdEnabled').checked;
+  personEditor.refresh();
 }
 
 function updateProtectionState(): void {
   const enabled = input('enabled').checked;
   const skipped = !settingsView && !!currentHost && siteIsExcepted(currentHost, settings.siteExceptions);
-  const noPeople = select('filter').value === 'off';
+  const noPeople = !['female', 'male'].some(gender => {
+    const policy = genderPolicy(settings, gender as 'female' | 'male');
+    return input('images').checked && hasImageCoverage(policy) || input('videos').checked && policy.video !== 'show';
+  });
   const noMedia = !input('images').checked && !input('videos').checked;
   const paused = !enabled || skipped || noPeople || noMedia;
   document.body.dataset.protection = paused ? 'paused' : 'on';
   element('protectionTitle').textContent = t(!enabled ? 'Protection is paused' : skipped ? 'Paused on this site'
     : noPeople ? 'No people selected' : noMedia ? 'No media selected' : 'Protection is on');
   element('protectionState').textContent = t(!enabled ? 'Turn on to resume across websites.' : skipped ? 'Enabled on other websites.'
-    : noPeople ? 'Choose who to cover below.' : noMedia ? 'Turn on Images or Videos below.' : 'Your choices apply across websites.');
+    : noPeople ? 'Choose an area to hide below.' : noMedia ? 'Turn on Images or Videos below.' : 'Your choices apply across websites.');
   if (settingsView) return;
   const button = element('toggleSite') as HTMLButtonElement;
   const inherited = skipped && !settings.siteExceptions.includes(currentHost!);
@@ -168,6 +172,7 @@ async function renderPageStatus(): Promise<void> {
 async function persist(patch: Partial<Settings>, control: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement): Promise<boolean> {
   pendingSaves++;
   control.disabled = true;
+  document.querySelectorAll<HTMLButtonElement>('[data-person-action],#showAllAreas,#hideAllAreas').forEach(button => { button.disabled = true; });
   saveStatus('Saving…', 'saving');
   updateProtectionState();
   try {
@@ -182,6 +187,7 @@ async function persist(patch: Partial<Settings>, control: HTMLInputElement | HTM
   } finally {
     pendingSaves--;
     control.disabled = false;
+    if (pendingSaves === 0) document.querySelectorAll<HTMLButtonElement>('[data-person-action],#showAllAreas,#hideAllAreas').forEach(button => { button.disabled = false; });
     updateProtectionState();
     if (pendingSaves === 0 && saveFailed) {
       // Restore all persisted values after concurrent writes settle.
@@ -196,6 +202,11 @@ async function render(): Promise<void> {
   const response = await chrome.runtime.sendMessage({ type: 'get-settings' }) as Settings & { error?: string };
   if (!response || response.error || !Number.isFinite(response.revision)) throw new Error('Settings unavailable');
   settings = normalizeSettings(response);
+  if (!settings.personPolicies) {
+    const migrated = await chrome.runtime.sendMessage({ type: 'set-settings', patch: { personPolicies: editablePolicies(settings) } }) as Settings & { error?: string };
+    if (!migrated || migrated.error) throw new Error('Policy migration failed');
+    settings = normalizeSettings(migrated);
+  }
   element('version').textContent = t('Version {version}', { version: chrome.runtime.getManifest().version });
   for (const field of [...fields, ...skinToggleFields]) {
     const control = element(field) as HTMLInputElement | HTMLSelectElement;
@@ -206,20 +217,19 @@ async function render(): Promise<void> {
       const value = field === 'onnxThreads' && raw !== 'auto' ? Number(raw) : raw;
       updateMaskControls();
       updateProtectionState();
-      const saved = await persist({ [field]: value } as Partial<Settings>, control);
-      if (saved && field === 'performance') await render();
-    };
-  }
-  for (const field of skinNumberFields) {
-    const control = input(field);
-    control.value = String(settings[field]);
-    control.oninput = () => { control.removeAttribute('aria-invalid'); };
-    control.onchange = async () => {
-      if (!control.checkValidity()) {
-        control.setAttribute('aria-invalid', 'true'); control.reportValidity();
-        saveStatus('Enter a value within the shown limits.', 'error'); return;
+      const patch = { [field]: value } as Partial<Settings>;
+      if (field === 'imageBodyRegionMode' && value === 'off') {
+        const policies = editablePolicies(settings);
+        for (const gender of ['female', 'male'] as const) {
+          const policy = policies[gender], action = Object.values(policy.skin).includes('hide') || policy.otherSkin === 'hide' ? 'hide' : 'show';
+          for (const area of Object.keys(policy.skin) as Array<keyof typeof policy.skin>) policy.skin[area] = action;
+          policy.otherSkin = action;
+        }
+        patch.personPolicies = policies;
       }
-      if (await persist({ [field]: Number(control.value) }, control)) control.value = String(settings[field]);
+      const saved = await persist(patch, control);
+      updateMaskControls();
+      if (saved && field === 'performance') await render();
     };
   }
   for (const field of Object.keys(resolutionSteps) as Array<keyof typeof resolutionSteps>) {
@@ -354,7 +364,7 @@ initializeUiPreferences(() => {
     saveStatus(websiteDraft === undefined ? 'Saved automatically' : 'Unsaved websites. Save to apply.');
   }
 });
-const preferenceControls = document.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input,select:not(#uiTheme):not(#uiLanguage),textarea');
+const preferenceControls = document.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLButtonElement>('input,select:not(#uiTheme):not(#uiLanguage),textarea,[data-person-action],[data-person-gender],#showAllAreas,#hideAllAreas');
 preferenceControls.forEach(control => { control.disabled = true; });
 async function initialize(): Promise<void> {
   try {

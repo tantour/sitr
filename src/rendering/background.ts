@@ -46,6 +46,7 @@ export async function renderBackground(blob: Blob, result: AnalysisResult): Prom
     } else for (let i = 0; i < alpha.length; i++) alpha[i] = result.rgbaMask[i * 4 + 3];
     paint(alpha, result.effect);
     if (result.faceMask) paint(result.faceMask, result.faceEffect);
+    for (const layer of result.faceLayers ?? []) paint(layer.alpha, layer.effect);
     if (result.blackMask) paint(result.blackMask);
     // Debug graphics must be baked into the same source as the mask so CSS
     // cover/contain, cropping and repeated tiles transform them together.
@@ -55,12 +56,27 @@ export async function renderBackground(blob: Blob, result: AnalysisResult): Prom
     const uiScale = Math.max(1, Math.min(source.width, source.height) / 320);
     const label = (text: string, left: number, top: number, tint: string) => {
       ctx.font = `${12 * uiScale}px system-ui, sans-serif`;
-      const height = 18 * uiScale, width = ctx.measureText(text).width + 8 * uiScale;
+      const height = 18 * uiScale, width = Math.min(source.width, ctx.measureText(text).width + 8 * uiScale);
       left = Math.max(0, Math.min(source.width - width, left));
       top = Math.max(0, Math.min(source.height - height, top));
       ctx.fillStyle = 'rgba(0,0,0,.78)'; ctx.fillRect(left, top, width, height);
-      ctx.fillStyle = tint; ctx.fillText(text, left + 4 * uiScale, top + 13 * uiScale);
+      ctx.fillStyle = tint; ctx.fillText(text, left + 4 * uiScale, top + 13 * uiScale, Math.max(1, width - 8 * uiScale));
     };
+    if (result.debugBodyRegions) {
+      const { labels, width, height } = result.debugBodyRegions;
+      const regions = document.createElement('canvas'); regions.width = width; regions.height = height;
+      const pixels = new Uint8ClampedArray(width * height * 4);
+      // Same palette as the regular-image overlay.
+      const colors = [[0, 0, 0], [240, 55, 65], [60, 140, 255], [155, 90, 235], [245, 210, 60], [225, 65, 190], [45, 195, 95], [45, 205, 215], [235, 155, 45]];
+      for (let p = 0; p < labels.length; p++) if (labels[p] > 0 && labels[p] < colors.length)
+        pixels.set([...colors[labels[p]], 105], p * 4);
+      regions.getContext('2d')!.putImageData(new ImageData(pixels, width, height), 0, 0);
+      ctx.drawImage(regions, sx * width / side, sy * height / side, sw * width / side, sh * height / side, 0, 0, source.width, source.height);
+    }
+    if (result.debugPersonMasks && result.bodyRegionDiagnostics && result.bodyRegionDiagnostics.model !== 'off') {
+      const diagnostic = result.bodyRegionDiagnostics;
+      label(`Advanced segmentation ${diagnostic.model === 'finer' ? 'Quality' : 'Fast'} · ${diagnostic.status} · ${diagnostic.backend ?? 'no inference'} · ${Math.round(result.timingsMs?.bodyRegions ?? 0)} ms`, 0, 0, '#fff');
+    }
     for (const person of result.debugPersonMasks ?? []) {
       const tint = color(person.labelUsable ? person.label : 'unknown');
       const outline = document.createElement('canvas'); outline.width = person.width; outline.height = person.height;

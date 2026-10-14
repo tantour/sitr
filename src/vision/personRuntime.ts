@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Sitr contributors
 export { YoloPersonSegmenter } from './person';
+export { BodyPixRegionSegmenter } from './bodyRegions';
 export { FastPersonDetector } from './fastPerson';
 export { AppearanceGenderClassifier } from './gender';
 export { BodyGenderClassifier } from './bodyGender';

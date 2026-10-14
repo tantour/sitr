@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Sitr contributors
 /// <reference lib="webworker" />
-import { ENGINE, resolvePersonSize, type Settings, type Label } from '../config/settings';
+import { BODY_REGIONS, ENGINE, resolvePersonSize, type FaceEffect, type WholeBodyEffect, type Settings, type Label } from '../config/settings';
+import { faceStrength, genderPolicy, hasBodyCoverage, hasFaceEffects, policyFor } from '../config/personPolicy';
+import { regionCoverage } from '../rendering/regionCoverage';
 import type { AnalysisResult, FramePacket, FrameKey, Track, WorkerInput, WorkerOutput } from '../state/contracts';
 import type { YoloPersonSegmenter } from '../vision/person';
 import type { FastPersonDetector } from '../vision/fastPerson';
@@ -20,12 +22,15 @@ import { faceEllipseMask, openAssociatedFaces, videoPersonMask } from '../render
 import { imageDetectionGatePass, imageSkinThresholds, personSelected, selectedMask } from '../rules/evaluate';
 import { openThresholdFace, skinThresholdMask } from '../rendering/skinThreshold';
 import { imageAnalysisKey } from '../config/imageAnalysis';
+import type { BodyPixRegionSegmenter } from '../vision/bodyRegions';
+import { allowedRegionIds, bodyRegionsEnabled } from '../vision/bodyRegionMap';
+import type { BodyRegionDiagnostics } from '../state/contracts';
 
 type FaceLabel = { label: Label; labelUsable: boolean };
-type Session = { epoch: number; tracker: ByteTracker; lastTouched: number; lastBytes: number; kind?: 'image' | 'video'; imageAnalysis?: string; timingsMs?: AnalysisResult['timingsMs']; genderDiagnostics?: AnalysisResult['genderDiagnostics']; last?: { frame: FramePacket; tracks: Track[]; categories: Uint8Array; composition: Composition; faceAssociations?: FaceAssociation[]; detectedFaces?: FaceBox[]; faceLabels?: FaceLabel[] } };
+type Session = { epoch: number; tracker: ByteTracker; lastTouched: number; lastBytes: number; kind?: 'image' | 'video'; imageAnalysis?: string; timingsMs?: AnalysisResult['timingsMs']; genderDiagnostics?: AnalysisResult['genderDiagnostics']; bodyRegionDiagnostics?: BodyRegionDiagnostics; last?: { frame: FramePacket; tracks: Track[]; categories: Uint8Array; bodyRegions?: Uint8Array; composition: Composition; faceAssociations?: FaceAssociation[]; detectedFaces?: FaceBox[]; faceLabels?: FaceLabel[] } };
 const sessions = new Map<string, Session>();
 type CachedImage = { key: string; rgba: Uint8Array; faceRgba?: Uint8Array; detections: Awaited<ReturnType<YoloPersonSegmenter['segment']>>;
-  categories: Uint8Array; faces?: FaceBox[]; gender?: GenderEstimate[]; genderReady: boolean; bytes: number };
+  categories: Uint8Array; bodyRegions?: Uint8Array; bodyRegionDiagnostics?: BodyRegionDiagnostics; faces?: FaceBox[]; gender?: GenderEstimate[]; genderReady: boolean; bytes: number };
 const imageCache = new Map<string, CachedImage>();
 let cacheBytes = 0;
 const memoryBudget = 64 * 1024 * 1024;
@@ -36,6 +41,11 @@ let fastConstructor: typeof FastPersonDetector | undefined;
 let genderConstructor: typeof AppearanceGenderClassifier | undefined;
 let bodyGenderConstructor: typeof BodyGenderClassifier | undefined;
 let faceConstructor: typeof OptionalFaceDetector | undefined;
+let bodyRegionConstructor: typeof BodyPixRegionSegmenter | undefined;
+let bodyRegionModel: BodyPixRegionSegmenter | undefined;
+let bodyRegionRetryAt = 0;
+let bodyRegionFailure = '';
+let bodyRegionFailedMode: Settings['imageBodyRegionMode'] = 'off';
 let genderModel: AppearanceGenderClassifier | undefined;
 const bodyGenderModels = new Map<BodyGenderModel, BodyGenderClassifier>();
 const bodyRetryAt = new Map<BodyGenderModel, number>();
@@ -59,8 +69,10 @@ function send(output: WorkerOutput): void {
   if (result.staticMask) transfers.push(result.staticMask.buffer);
   if (result.blackMask) transfers.push(result.blackMask.buffer);
   if (result.faceMask) transfers.push(result.faceMask.buffer);
+  for (const layer of result.faceLayers ?? []) transfers.push(layer.alpha.buffer);
   for (const mask of result.trackMasks ?? []) transfers.push(mask.alpha.buffer);
   for (const item of result.debugPersonMasks ?? []) transfers.push(item.mask.buffer);
+  if (result.debugBodyRegions) transfers.push(result.debugBodyRegions.labels.buffer);
   postMessage(output, transfers);
 }
 function getSession(key: FrameKey): Session {
@@ -92,6 +104,7 @@ function cachedImage(frame: FramePacket, current: Settings): CachedImage | undef
   const key = imageCacheKey(frame, current);
   const entry = imageCache.get(key);
   if (!entry || !sameBytes(entry.rgba, frame.rgba) || !sameBytes(entry.faceRgba, frame.faceRgba)) return;
+  if (bodyRegionsEnabled(current, 'image') && entry.bodyRegionDiagnostics?.status === 'fallback') return;
   imageCache.delete(key);
   imageCache.set(key, entry);
   return entry;
@@ -115,7 +128,7 @@ function composeWholePerson(tracks: Track[]): Composition {
     uncertainMask: empty(), uncertainByTrack: tracks.map(empty), unassignedForeground: 0,
   };
 }
-function composeFrame(frame: FramePacket, tracks: Track[], categories: Uint8Array, current: Settings): Composition {
+function composeFrame(frame: FramePacket, tracks: Track[], categories: Uint8Array, current: Settings, regions?: Uint8Array): Composition {
   if (frame.kind === 'video') return composeWholePerson(tracks);
   const whole = current.imageCoverage !== 'regions';
   return compose(tracks, categories, frame.width, frame.height, {
@@ -123,21 +136,30 @@ function composeFrame(frame: FramePacket, tracks: Track[], categories: Uint8Arra
     bodySkin: whole || current.bodySkin,
     hair: whole || current.hair,
     faceSkin: current.imageCoverage === 'whole-body-face',
-  }, current.imageCoverage);
+  }, current.imageCoverage, regions);
 }
-function imageFaceMask(session: Session, current: Settings, side: number): Uint8Array | undefined {
-  const kind = current.imageCoverage === 'regions' ? current.imageRegionFaceEffect
-    : current.imageCoverage === 'whole-body' ? current.imageWholeBodyFaceEffect : 'show';
-  if (kind === 'show' || current.filter === 'off' || !session.last) return;
+function imageFaceMask(session: Session, current: Settings, side: number, requested?: FaceEffect, strength?: number): Uint8Array | undefined {
+  const kind = requested ?? (current.imageCoverage === 'regions' ? current.imageRegionFaceEffect
+    : current.imageCoverage === 'whole-body' ? current.imageWholeBodyFaceEffect : 'show');
+  if (kind === 'show' || !current.personPolicies && current.filter === 'off' || !session.last) return;
   const { tracks, categories, faceAssociations, detectedFaces, faceLabels } = session.last;
-  const selected = new Set(tracks.filter(track => personSelected(track, current, 'image')).map(track => track.id));
+  const chosen = (person: FaceLabel) => personSelected(person, current, 'image') && (!current.personPolicies ||
+    policyFor(current, person).face === kind && (strength === undefined || faceStrength(current, policyFor(current, person)) === strength));
+  const selected = new Set(tracks.filter(chosen).map(track => track.id));
   const mask = new Uint8Array(side * side);
   const faceChosen = (detectedFaces ?? []).map((_face, index) => {
     const association = faceAssociations?.[index];
     if (association?.trackId && !association.ambiguous) return selected.has(association.trackId);
-    return personSelected(faceLabels?.[index] ?? { label: 'unknown', labelUsable: false }, current, 'image');
+    if (current.personPolicies) {
+      const cx = _face.box.x + _face.box.width / 2, cy = _face.box.y + _face.box.height / 2;
+      const possible = tracks.filter(track => track.labelUsable && cx >= track.box.x && cx <= track.box.x + track.box.width &&
+        cy >= track.box.y && cy <= track.box.y + track.box.height);
+      if (possible.length === 1) return chosen(possible[0]);
+    }
+    return chosen(faceLabels?.[index] ?? { label: 'unknown', labelUsable: false });
   });
   const exemptFaces = faceEllipseMask(side, (detectedFaces ?? []).flatMap((face, index) => faceChosen[index] ? [] : [face.box]));
+  const unknownChosen = chosen({ label: 'unknown', labelUsable: false });
   // MediaPipe supplies face-skin pixels when YuNet misses a face. Keep pixels
   // belonging only to an exempt person out of this extra effect layer.
   for (let p = 0; p < categories.length; p++) {
@@ -147,7 +169,7 @@ function imageFaceMask(session: Session, current: Settings, side: number): Uint8
       if (selected.has(track.id)) selectedOwner = true;
       else exemptOwner = true;
     }
-    if (selectedOwner || (!exemptOwner && current.imageUnknown !== 'allow' && !exemptFaces[p])) mask[p] = 255;
+    if (selectedOwner || (!exemptOwner && unknownChosen && !exemptFaces[p])) mask[p] = 255;
   }
   const boxes = (detectedFaces ?? []).flatMap((face, index) => faceChosen[index] ? [face.box] : []);
   const ellipses = faceEllipseMask(side, boxes);
@@ -199,6 +221,7 @@ async function ensureModels(size: number, needSemantic = true, fast = false): Pr
     genderConstructor = runtime.AppearanceGenderClassifier;
     bodyGenderConstructor = runtime.BodyGenderClassifier;
     faceConstructor = runtime.OptionalFaceDetector;
+    bodyRegionConstructor = runtime.BodyPixRegionSegmenter;
   }
   if (!personConstructor) throw new Error('Person runtime unavailable');
   if (personModels.size >= 2) {
@@ -213,6 +236,49 @@ async function ensureModels(size: number, needSemantic = true, fast = false): Pr
   personModels.set(key, { model, lastUsed: Date.now() });
   await semanticReady;
   return model;
+}
+async function inferBodyRegions(frame: FramePacket, categories: Uint8Array, current: Settings, reused?: CachedImage): Promise<{
+  map?: Uint8Array; diagnostics: BodyRegionDiagnostics; ms: number; stages: { preprocess: number; run: number; decode: number };
+}> {
+  const skinPixels = categories.reduce((sum, label) => sum + Number(label === 2), 0);
+  const diagnostics: BodyRegionDiagnostics = { model: current.imageBodyRegionMode,
+    status: frame.kind === 'video' ? 'skipped-video' : current.imageBodyRegionMode === 'off' ? 'disabled'
+      : current.imageCoverage !== 'regions' ? 'skipped-coverage' : !hasBodyCoverage(current) || !skinPixels ? 'skipped-no-skin' : 'ready',
+    skinPixels, unknownSkinPixels: 0, allowedSkinPixels: 0, coveredSkinPixels: 0,
+    femaleAllowedRegions: [...current.imageFemaleAllowedRegions], maleAllowedRegions: [...current.imageMaleAllowedRegions] };
+  const stages = { preprocess: 0, run: 0, decode: 0 };
+  if (diagnostics.status !== 'ready') {
+    if (current.imageBodyRegionMode === 'off' && bodyRegionModel) { await bodyRegionModel.dispose(); bodyRegionModel = undefined; }
+    return { diagnostics, ms: 0, stages };
+  }
+  if (reused?.bodyRegions && reused.bodyRegionDiagnostics) return {
+    map: reused.bodyRegions, diagnostics: { ...reused.bodyRegionDiagnostics, status: 'cache',
+      femaleAllowedRegions: diagnostics.femaleAllowedRegions, maleAllowedRegions: diagnostics.maleAllowedRegions }, ms: 0, stages,
+  };
+  const at = performance.now();
+  try {
+    if (bodyRegionFailedMode === current.imageBodyRegionMode && Date.now() < bodyRegionRetryAt) throw new Error(bodyRegionFailure);
+    if (bodyRegionModel?.mode !== current.imageBodyRegionMode) {
+      await bodyRegionModel?.dispose(); bodyRegionModel = undefined;
+      if (!bodyRegionConstructor) throw new Error('BodyPix runtime unavailable');
+      const model = new bodyRegionConstructor(current.imageBodyRegionMode as 'faster' | 'finer', onnxPreference, onnxThreads);
+      try { await model.initialize(); } catch (error) { await model.dispose(); throw error; }
+      bodyRegionModel = model;
+    }
+    const map = await bodyRegionModel!.segment(frame.rgba, frame.width, categories);
+    diagnostics.backend = bodyRegionModel!.getBackend(); diagnostics.inputSize = bodyRegionModel!.getInputSize();
+    diagnostics.stride = current.imageBodyRegionMode === 'faster' ? 16 : 8;
+    diagnostics.unknownSkinPixels = categories.reduce((sum, label, index) => sum + Number(label === 2 && map[index] === 0), 0);
+    bodyRegionRetryAt = 0;
+    return { map, diagnostics, ms: performance.now() - at, stages: bodyRegionModel!.getLastTimings() };
+  } catch (error) {
+    diagnostics.status = 'fallback'; diagnostics.unknownSkinPixels = skinPixels;
+    diagnostics.error = (error instanceof Error ? error.message : String(error)).slice(0, 300);
+    bodyRegionFailure = diagnostics.error; bodyRegionFailedMode = current.imageBodyRegionMode; bodyRegionRetryAt = Date.now() + 5000;
+    await bodyRegionModel?.dispose().catch(() => {}); bodyRegionModel = undefined;
+    console.warn('BodyPix unavailable; covering skin with the existing model:', diagnostics.error);
+    return { diagnostics, ms: performance.now() - at, stages };
+  }
 }
 function render(frame: FramePacket, session: Session, composition: Composition): AnalysisResult {
   if (!settings) throw new Error('Settings unavailable');
@@ -234,11 +300,23 @@ function render(frame: FramePacket, session: Session, composition: Composition):
     .filter((box): box is NonNullable<typeof box> => !!box);
   const wholePerson = isVideo || settings.imageCoverage !== 'regions';
   const alpha = wholePerson ? new Uint8Array(0) : new Uint8Array(size * size);
+  const bodyRegions = bodyRegionsEnabled(settings, frame.kind) ? session.last?.bodyRegions : undefined;
+  const allowedSkin = bodyRegions ? new Uint8Array(size * size) : undefined;
+  const requiredCoverage = bodyRegions ? new Uint8Array(size * size) : undefined;
+  const bodyRegionDiagnostics = session.bodyRegionDiagnostics && { ...session.bodyRegionDiagnostics,
+    model: settings.imageBodyRegionMode,
+    status: isVideo ? 'skipped-video' as const : settings.imageBodyRegionMode === 'off' ? 'disabled' as const
+      : settings.imageCoverage !== 'regions' ? 'skipped-coverage' as const : !hasBodyCoverage(settings) ? 'skipped-no-skin' as const
+      : session.bodyRegionDiagnostics.status,
+    femaleAllowedRegions: settings.personPolicies ? BODY_REGIONS.filter(area => genderPolicy(settings!, 'female').skin[area] === 'show') : [...settings.imageFemaleAllowedRegions],
+    maleAllowedRegions: settings.personPolicies ? BODY_REGIONS.filter(area => genderPolicy(settings!, 'male').skin[area] === 'show') : [...settings.imageMaleAllowedRegions],
+    policies: settings.personPolicies,
+    allowedSkinPixels: 0, coveredSkinPixels: 0 };
   const staticMask = isVideo || !gatePass ? undefined : dilate(pruneIslands(unassignedMask, size, size), size, size, settings.imageExpansion);
   if (staticMask && settings.imageCoverage === 'whole-body')
     openAssociatedFaces(staticMask, size, session.last?.detectedFaces?.map(face => face.box) ?? []);
   if (!wholePerson && staticMask) alpha.set(staticMask);
-  const trackMasks: Array<{ id: string; alpha: Uint8Array }> = [];
+  const trackMasks: NonNullable<AnalysisResult['trackMasks']> = [];
   for (let t = 0; t < observations.length; t++) {
     if (!gatePass) break;
     const observation = observations[t];
@@ -263,20 +341,50 @@ function render(frame: FramePacket, session: Session, composition: Composition):
           .filter((box): box is NonNullable<typeof box> => !!box);
         openAssociatedFaces(protectedMask, size, faceBoxes);
       }
-      trackMasks.push({ id: observation.id, alpha: protectedMask });
+      trackMasks.push({ id: observation.id, alpha: protectedMask, effect: isVideo && settings.personPolicies
+        ? { kind: policyFor(settings, observation).video as WholeBodyEffect, intensity: settings.videoEffectIntensity, grayscale: settings.videoEffectGrayscale } : undefined });
       continue;
     }
-    const part = selectedMask(observation, settings);
+    const part = selectedMask(observation, settings, bodyRegions);
     const ambiguousPart = composition.ambiguousByTrack[t];
     const uncertainPart = composition.uncertainByTrack[t];
-    for (let i = 0; i < part.length; i++) if (ambiguousPart[i] || uncertainPart[i]) part[i] = 255;
+    const allowed = bodyRegions ? allowedRegionIds(observation, settings) : undefined;
+    for (let i = 0; i < part.length; i++) if (hasBodyCoverage(settings) && observation.bodySkinMask[i]) {
+      if (allowedSkin && allowed?.[bodyRegions![i]] && !ambiguousPart[i] && !uncertainPart[i]) {
+        allowedSkin[i] = 255;
+        if (bodyRegionDiagnostics) bodyRegionDiagnostics.allowedSkinPixels++;
+      } else if (bodyRegionDiagnostics) bodyRegionDiagnostics.coveredSkinPixels++;
+    }
+    for (let i = 0; i < part.length; i++) if (ambiguousPart[i] || uncertainPart[i]) {
+      part[i] = 255;
+      if (requiredCoverage) requiredCoverage[i] = 255;
+    }
     const expanded = dilate(pruneIslands(part, size, size), size, size, settings.imageExpansion);
     for (let i = 0; i < alpha.length; i++) if (expanded[i]) alpha[i] = 255;
   }
-  if (!gatePass || (settings.filter === 'off' && !unreliable && !unassigned)) reason = 'off';
+  // Expansion must not repaint confidently owned skin in an explicitly allowed region.
+  if (allowedSkin) for (let i = 0; i < alpha.length; i++) if (allowedSkin[i] && !requiredCoverage![i]) alpha[i] = 0;
+  if (settings.personPolicies && !wholePerson && gatePass) alpha.set(regionCoverage(composition, session.last?.tracks ?? [], settings, size, bodyRegions));
+  const noImageCoverage = settings.personPolicies ? !['female', 'male'].some(gender => {
+    const policy = genderPolicy(settings!, gender as 'female' | 'male');
+    return policy.hair === 'hide' || policy.face !== 'show' || policy.otherSkin === 'hide' || BODY_REGIONS.some(area => policy.skin[area] === 'hide');
+  }) : settings.filter === 'off';
+  if (!gatePass || (noImageCoverage && !isVideo && !unreliable && !unassigned)) reason = 'off';
   const rgbaMask = new Uint8Array(alpha.length * 4);
   for (let i = 0; i < alpha.length; i++) rgbaMask[i * 4 + 3] = alpha[i];
-  const faceMask = !isVideo && gatePass ? imageFaceMask(session, settings, size) : undefined;
+  const faceMask = !isVideo && gatePass && !settings.personPolicies ? imageFaceMask(session, settings, size) : undefined;
+  const faceLayers = !isVideo && gatePass && settings.personPolicies && settings.imageCoverage !== 'whole-body-face'
+    ? (['blur', 'checkerboard', 'black'] as const).flatMap(kind => {
+      const strengths = new Set([genderPolicy(settings!, 'female'), genderPolicy(settings!, 'male'), policyFor(settings!, { label: 'unknown', labelUsable: false })]
+        .filter(policy => policy.face === kind).map(policy => faceStrength(settings!, policy)));
+      return [...strengths].sort((a, b) => a - b).flatMap(intensity => {
+        const alpha = imageFaceMask(session, settings!, size, kind, intensity);
+        if (!alpha?.some(Boolean)) return [];
+        if (!settings!.imageSkinThresholdIncludeFace) for (const observation of observations)
+          if (thresholds.bodyIds.has(observation.id)) openThresholdFace(alpha, observation, size, facesFor(observation.id));
+        return [{ alpha, effect: { kind, intensity, grayscale: settings!.imageFaceEffectGrayscale } }];
+      });
+    }) : undefined;
   if (faceMask && !settings.imageSkinThresholdIncludeFace) for (const observation of observations) {
     if (thresholds.bodyIds.has(observation.id)) openThresholdFace(faceMask, observation, size, facesFor(observation.id));
   }
@@ -287,9 +395,9 @@ function render(frame: FramePacket, session: Session, composition: Composition):
     key: frame.key, width: size, height: size, mediaTimeSec: frame.mediaTimeSec,
     acquisitionStartedAtMs: frame.acquisitionStartedAtMs,
     capturedAtMs: frame.capturedAtMs, analyzedAtMs: now, settingsRevision: settings.revision,
-    black: thresholds.blackImage, reason, rgbaMask, faceMask, blackMask,
+    black: thresholds.blackImage, reason, rgbaMask, faceMask, faceLayers, blackMask,
     trackMasks: wholePerson ? trackMasks : undefined,
-    effect: wholePerson ? { kind: isVideo ? settings.videoEffect : settings.imageWholeBodyEffect,
+    effect: wholePerson && !(isVideo && settings.personPolicies) ? { kind: isVideo ? settings.videoEffect : settings.imageWholeBodyEffect,
       intensity: isVideo ? settings.videoEffectIntensity : settings.imageEffectIntensity,
       grayscale: isVideo ? settings.videoEffectGrayscale : settings.imageEffectGrayscale } : undefined,
     faceEffect: faceMask ? { kind: faceKind === 'show' ? 'black' : faceKind,
@@ -315,7 +423,33 @@ function render(frame: FramePacket, session: Session, composition: Composition):
       return { box: face.box, score: face.score, trackId: association?.trackId, ambiguous: association?.ambiguous ?? true };
     }) : undefined,
     genderDiagnostics: session.genderDiagnostics,
+    bodyRegionDiagnostics,
+    debugBodyRegions: settings.debugOverlay && bodyRegions ? (() => {
+      const width = 128, height = 128, labels = new Uint8Array(width * height);
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++)
+        labels[y * width + x] = bodyRegions[Math.min(size - 1, Math.floor(y * size / height)) * size + Math.min(size - 1, Math.floor(x * size / width))];
+      return { labels, width, height };
+    })() : undefined,
   };
+}
+
+function renderCached(session: Session, current: Settings): AnalysisResult {
+  if (!session.last) throw new Error('Cached analysis unavailable');
+  const at = performance.now();
+  if (session.last.bodyRegions && bodyRegionsEnabled(current, session.last.frame.kind) && session.bodyRegionDiagnostics)
+    session.bodyRegionDiagnostics = { ...session.bodyRegionDiagnostics, status: 'cache' };
+  session.last.composition = composeFrame(session.last.frame, session.last.tracks, session.last.categories, current, session.last.bodyRegions);
+  const compositionMs = performance.now() - at, renderAt = performance.now();
+  const result = render(session.last.frame, session, session.last.composition);
+  if (session.timingsMs) result.timingsMs = { ...session.timingsMs, modelInit: 0, person: 0, semantic: 0, face: 0, gender: 0,
+    bodyRegions: 0, bodyRegionPreprocess: 0, bodyRegionRun: 0, bodyRegionDecode: 0,
+    personPreprocess: 0, personRun: 0, personDecode: 0, semanticPreprocess: 0, semanticRun: 0, semanticDecode: 0,
+    facePreprocess: 0, faceRun: 0, faceDecode: 0, genderPreprocess: 0, genderRun: 0, genderDecode: 0,
+    backend: 'cache', semanticBackend: session.kind === 'video' ? 'skipped' : 'cache',
+    bodyRegionBackend: bodyRegionsEnabled(current, session.last.frame.kind) && session.last.bodyRegions ? 'cache' : result.bodyRegionDiagnostics?.status,
+    bodyRegionModel: current.imageBodyRegionMode, composition: compositionMs, render: performance.now() - renderAt,
+    acquire: 0, queue: 0, tracking: 0, total: performance.now() - at };
+  return result;
 }
 
 async function analyze(frame: FramePacket): Promise<void> {
@@ -363,20 +497,23 @@ async function analyze(frame: FramePacket): Promise<void> {
     }
   })();
   const [detections, categories] = await Promise.all([personTask, semanticTask]);
+  const bodyRegions = await inferBodyRegions(frame, categories, settings, reused);
   if (!reused) for (const detection of detections)
     detection.appearance = personAppearance(frame.rgba, side, detection.box);
   const cacheEntry: CachedImage | undefined = frame.kind === 'image' ? reused ?? {
     key: imageCacheKey(frame, settings), rgba: frame.rgba,
     faceRgba: frame.faceRgba, detections, categories, genderReady: false,
+    bodyRegions: bodyRegions.map, bodyRegionDiagnostics: bodyRegions.diagnostics,
     bytes: frame.rgba.byteLength + (frame.faceRgba?.byteLength ?? 0) + categories.byteLength +
-      detections.reduce((sum, detection) => sum + detection.mask.byteLength, 0),
+      detections.reduce((sum, detection) => sum + detection.mask.byteLength, 0) + (bodyRegions.map?.byteLength ?? 0),
   } : undefined;
   const trackingAt = performance.now();
   const session = getSession(frame.key);
+  session.bodyRegionDiagnostics = bodyRegions.diagnostics;
   const imageNeedsFaceMatching = frame.kind === 'image' &&
     (settings.faceAssociation || settings.debugOverlay || settings.imageCoverage === 'whole-body' ||
       (settings.imageSkinThresholdEnabled && !settings.imageSkinThresholdIncludeFace) ||
-      (settings.imageCoverage === 'regions' && settings.imageRegionFaceEffect !== 'show') ||
+      (settings.imageCoverage === 'regions' && hasFaceEffects(settings)) ||
       (settings.automaticGender && settings.imageGenderModel.startsWith('face')));
   const tracks = session.tracker.update(detections, Date.now(), frame.kind === 'image',
     frame.motionTracks ? new Map(frame.motionTracks.map(track => [track.id, track.box])) : undefined,
@@ -402,7 +539,7 @@ async function analyze(frame: FramePacket): Promise<void> {
     (frame.kind === 'image' && ((settings.imageSkinThresholdEnabled && !settings.imageSkinThresholdIncludeFace) ||
       ['face', 'either', 'both'].includes(settings.imageDetectionGate) ||
       settings.imageCoverage === 'whole-body' ||
-      (settings.imageCoverage === 'regions' && settings.imageRegionFaceEffect !== 'show')));
+      (settings.imageCoverage === 'regions' && hasFaceEffects(settings))));
   const diagnostics = { model: genderChoice, people: tracks.length, faces: 0, associated: 0,
     faceGenderAttempts: 0, bodyGenderAttempts: 0, attempted: 0, accepted: 0,
     error: undefined as string | undefined };
@@ -437,7 +574,7 @@ async function analyze(frame: FramePacket): Promise<void> {
       for (const association of faceAssociations) if (association.trackId && !association.ambiguous)
         visibleFaceTracks.add(association.trackId);
       const independentImageFaces = frame.kind === 'image' &&
-        (settings.imageCoverage === 'regions' ? settings.imageRegionFaceEffect !== 'show'
+        (settings.imageCoverage === 'regions' ? hasFaceEffects(settings)
           : settings.imageCoverage === 'whole-body' && settings.imageWholeBodyFaceEffect !== 'show');
       if (genderDue && (faceGender || independentImageFaces)) {
         const genderAt = performance.now();
@@ -538,12 +675,12 @@ async function analyze(frame: FramePacket): Promise<void> {
     }
   }
   const compositionAt = performance.now();
-  const composition = composeFrame(frame, tracks, categories, settings);
+  const composition = composeFrame(frame, tracks, categories, settings, bodyRegions.map);
   const compositionMs = performance.now() - compositionAt;
-  session.last = { frame: { ...frame, rgba: new Uint8Array(0), faceRgba: undefined }, tracks, categories, composition, faceAssociations, detectedFaces, faceLabels };
+  session.last = { frame: { ...frame, rgba: new Uint8Array(0), faceRgba: undefined }, tracks, categories, bodyRegions: bodyRegions.map, composition, faceAssociations, detectedFaces, faceLabels };
   session.kind = frame.kind;
   session.imageAnalysis = frame.kind === 'image' ? imageAnalysisKey(settings) : undefined;
-  session.lastBytes = side * side * (5 * composition.observations.length + 5) + tracks.length * side * side * 4;
+  session.lastBytes = side * side * (5 * composition.observations.length + 5) + tracks.length * side * side * 4 + (bodyRegions.map?.byteLength ?? 0);
   if (cacheEntry && !reused) keepImage(cacheEntry);
   trimSessions(frame.key.mediaSessionId);
   const renderAt = performance.now();
@@ -555,6 +692,9 @@ async function analyze(frame: FramePacket): Promise<void> {
     composition: compositionMs, render: renderMs,
     personPreprocess: personStages.preprocess, personRun: personStages.run, personDecode: personStages.decode,
     semanticPreprocess: semanticStages.preprocess, semanticRun: semanticStages.run, semanticDecode: semanticStages.decode,
+    bodyRegions: bodyRegions.ms, bodyRegionPreprocess: bodyRegions.stages.preprocess,
+    bodyRegionRun: bodyRegions.stages.run, bodyRegionDecode: bodyRegions.stages.decode,
+    bodyRegionBackend: bodyRegions.diagnostics.status === 'cache' ? 'cache' : bodyRegions.diagnostics.backend ?? bodyRegions.diagnostics.status, bodyRegionModel: settings.imageBodyRegionMode,
     facePreprocess: faceStages.preprocess, faceRun: faceStages.run, faceDecode: faceStages.decode,
     genderPreprocess: genderStages.preprocess, genderRun: genderStages.run, genderDecode: genderStages.decode,
     total: performance.now() - started, backend: person?.getBackend() ?? 'cache', faceBackend: faces?.getBackend(),
@@ -592,8 +732,9 @@ self.onmessage = async (event: MessageEvent<WorkerInput>) => {
       settings = message.settings;
       const session = sessions.get(message.key.mediaSessionId);
       if (!session || session.epoch !== message.key.epoch || !session.last || session.last.frame.key.sequence !== message.key.sequence) throw new Error('Cached analysis unavailable');
-      session.last.composition = composeFrame(session.last.frame, session.last.tracks, session.last.categories, settings);
-      send({ type: 'result', result: render(session.last.frame, session, session.last.composition) });
+      if (session.kind === 'image' && session.imageAnalysis !== imageAnalysisKey(settings)) throw new Error('Cached analysis unavailable');
+      if (settings.imageBodyRegionMode === 'off' && bodyRegionModel) { await bodyRegionModel.dispose(); bodyRegionModel = undefined; }
+      send({ type: 'result', result: renderCached(session, settings) });
       return;
     }
     if (message.type === 'reuse-image') {
@@ -613,8 +754,10 @@ self.onmessage = async (event: MessageEvent<WorkerInput>) => {
       session.imageAnalysis = source.imageAnalysis;
       session.lastBytes = source.lastBytes;
       session.genderDiagnostics = source.genderDiagnostics && { ...source.genderDiagnostics };
+      session.bodyRegionDiagnostics = source.bodyRegionDiagnostics && { ...source.bodyRegionDiagnostics,
+        status: source.last.bodyRegions ? 'cache' : source.bodyRegionDiagnostics.status };
       const compositionAt = performance.now();
-      snapshot.composition = composeFrame(snapshot.frame, snapshot.tracks, snapshot.categories, settings);
+        snapshot.composition = composeFrame(snapshot.frame, snapshot.tracks, snapshot.categories, settings, snapshot.bodyRegions);
       const compositionMs = performance.now() - compositionAt;
       trimSessions(message.key.mediaSessionId);
       const renderAt = performance.now();
@@ -623,6 +766,8 @@ self.onmessage = async (event: MessageEvent<WorkerInput>) => {
         acquire: 0, modelInit: 0, person: 0, semantic: 0, tracking: 0, face: 0, gender: 0,
         personPreprocess: 0, personRun: 0, personDecode: 0,
         semanticPreprocess: 0, semanticRun: 0, semanticDecode: 0,
+        bodyRegions: 0, bodyRegionPreprocess: 0, bodyRegionRun: 0, bodyRegionDecode: 0,
+        bodyRegionBackend: bodyRegionsEnabled(settings, 'image') && snapshot.bodyRegions ? 'cache' : result.bodyRegionDiagnostics?.status, bodyRegionModel: settings.imageBodyRegionMode,
         facePreprocess: 0, faceRun: 0, faceDecode: 0,
         genderPreprocess: 0, genderRun: 0, genderDecode: 0, backend: 'cache', semanticBackend: 'cache',
         composition: compositionMs, render: performance.now() - renderAt, total: performance.now() - started };
@@ -634,8 +779,7 @@ self.onmessage = async (event: MessageEvent<WorkerInput>) => {
       settings = message.settings;
       const session = sessions.get(message.key.mediaSessionId);
       if (!session || session.epoch !== message.key.epoch || !session.last || !session.tracker.label(message.trackId, message.label as Label)) throw new Error('Track label unavailable');
-      session.last.composition = composeFrame(session.last.frame, session.last.tracks, session.last.categories, settings!);
-      send({ type: 'result', result: render(session.last.frame, session, session.last.composition) });
+      send({ type: 'result', result: renderCached(session, settings) });
       return;
     }
     if (message.type === 'analyze') {

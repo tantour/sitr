@@ -48,7 +48,8 @@ await mkdir(resolve(out, 'models'), { recursive: true });
 await mkdir(resolve(out, 'wasm'), { recursive: true });
 for (const file of ['yolo26n-seg-256.onnx', 'yolo26n-seg-320.onnx', 'yolo26n-seg-416.onnx',
   'yolo26n-det-256.onnx', 'yolo26n-det-256-gpu.onnx', 'selfie_multiclass_256x256.tflite', 'yunet-2026may.onnx', 'fastface-large-128.onnx',
-  'body-intel-0230.onnx', 'body-paddle-pplcnet.onnx']) {
+  'body-intel-0230.onnx', 'body-paddle-pplcnet.onnx',
+  'bodypix-mobilenet075-stride16-257.onnx', 'bodypix-mobilenet075-stride8-321.onnx']) {
   await cp(resolve(root, 'models', file), resolve(out, 'models', file));
 }
 for (const size of [256, 320, 416]) await cp(resolve(root, 'models', `yolo26n-seg-${size}-gpu.onnx`), resolve(out, 'models', `yolo26n-seg-${size}-gpu.onnx`));

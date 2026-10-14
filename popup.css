@@ -1,6 +1,6 @@
 :root{color-scheme:light;--ink:#123e3a;--ink-deep:#0c302e;--sea:#28786d;--sea-soft:#e8f3ef;--paper:#f6f8f6;--white:#fff;--line:#dbe5e0;--muted:#536e68;--focus:#138b7b;--danger:#a12f27;--button-border:#b4c9c1;--field-border:#bccfc6;--active:#d7eae2;--checked-border:#a7cbbb;--paused:#f0f1ef;--paused-ink:#52625b;--switch-off:#7d8c86;--thumb:#fff;--warning-ink:#755324;--warning:#fcf5e7;--scrollbar:#a7c9c0;--selection:#b7e1d7;--primary:#123e3a;--primary-ink:#fff}
 *{box-sizing:border-box}
-body{width:400px;height:590px;overflow:hidden;margin:0;background:var(--white);color:var(--ink-deep);font:13px/1.45 "Segoe UI",Arial,sans-serif}
+body{width:440px;height:600px;overflow:hidden;margin:0;background:var(--white);color:var(--ink-deep);font:13px/1.45 "Segoe UI",Arial,sans-serif}
 ::selection{background:var(--selection);color:var(--ink-deep)}
 button,input,select,textarea{font:inherit}
 button,select,input[type=checkbox],summary{cursor:pointer}
@@ -69,6 +69,15 @@ select:hover,textarea:hover{border-color:var(--sea)}
 .skin-rule{margin-top:12px}
 .skin-rule+.skin-rule{padding-top:12px;border-top:1px solid var(--line)}
 .skin-rule>div{margin-top:10px}
+.body-region-settings{margin-block-start:12px}
+.body-region-settings summary{color:var(--sea);padding:3px 0;font-weight:600}
+.body-region-model{display:block;margin-block-start:12px}
+.body-region-model select{width:100%;margin-block-start:6px}
+.body-region-policies{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-block:14px}
+.body-region-policies fieldset{border:0;padding:0;margin:0;min-width:0}
+.body-region-policies legend{font-size:12px;font-weight:600;margin-block-end:8px}
+.body-region-policies .check-option{display:flex;align-items:flex-start;gap:7px;margin-block:8px;font-size:12px;line-height:1.4}
+.body-region-policies input{flex:none;margin-block-start:2px}
 .skin-rule .setting-field{grid-template-columns:minmax(0,1fr) 78px;gap:12px}
 .skin-rule input[type=number]{width:100%;min-height:34px;padding:6px 9px;border:1px solid var(--field-border);border-radius:6px;background:var(--white);color:var(--ink-deep);font:inherit;font-weight:400;font-variant-numeric:tabular-nums;text-align:end}
 .skin-rule input[type=number]:hover{border-color:var(--sea)}
@@ -157,3 +166,56 @@ output{unicode-bidi:isolate}
 #siteExceptions{unicode-bidi:plaintext;text-align:left}
 body[data-view=settings] .interface-controls{margin-inline-start:auto}
 @media(max-width:760px){body[data-view=settings] .topbar{flex-wrap:wrap;gap:10px}body[data-view=settings] #version{order:3;width:100%;text-align:end}body[data-view=settings] .interface-controls{margin-inline-start:0}}
+/* Region editor: one gender, one area, one action. */
+.person-editor{margin-block:4px 14px}
+.gender-tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);padding-bottom:7px;position:sticky;top:0;z-index:2;background:var(--white)}
+.gender-tabs button{flex:1;border-color:transparent;background:transparent;color:var(--muted)}
+.gender-tabs button[aria-selected=true]{background:var(--sea-soft);color:var(--ink);border-color:var(--checked-border)}
+.person-policy-panel{display:grid;grid-template-columns:minmax(104px,.8fr) minmax(0,1.2fr);gap:20px;align-items:start;margin-top:12px}
+.person-diagram{width:100%;height:270px;overflow:visible}
+.person-diagram g{cursor:pointer;outline:none}
+.person-diagram path{fill:var(--white);stroke:var(--sea);stroke-width:1.4;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.person-diagram [data-action=hide] path,.person-diagram [data-action=black] path{fill:var(--ink);stroke:var(--sea)}
+.person-diagram [data-action=blur] path,.person-diagram [data-action=checkerboard] path{fill:var(--sea);stroke:var(--ink)}
+.person-diagram .selected path,.person-diagram g:focus-visible path{stroke:var(--focus);stroke-width:3;stroke-dasharray:4 2}
+.person-diagram g:hover path{stroke-width:2.5}
+.person-area-controls{min-width:0;padding-top:8px}
+.area-picker-label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px}
+#personAreaSelect{width:100%;font-size:11px;padding-inline:5px}
+.person-area-controls h3{font-size:16px;margin:19px 0 3px;line-height:1.35}
+.current-area-action{font-size:12px;color:var(--sea);margin-bottom:12px;font-weight:600}
+.area-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.area-actions button{font-size:12px;font-weight:400;padding-inline:4px}
+.area-actions button[aria-pressed=true]{background:var(--ink);color:var(--white);border-color:var(--ink)}
+.person-area-controls .setting-hint{margin-top:13px}
+.person-reset{display:flex;gap:8px;align-items:center;margin-top:10px}
+.person-reset button{font-size:11px;flex:none}
+.diagram-legend{font-size:10px;color:var(--muted);line-height:1.3}
+.image-advanced{border-top:1px solid var(--line);padding-top:10px}
+body[data-view=popup] #personPolicySummary{display:none}
+body[data-view=settings] .appearance-columns{grid-template-columns:minmax(0,1.65fr) minmax(0,1fr)}
+body[data-view=settings] .person-diagram{height:280px}
+body[data-view=settings] #personAreaSelect{font-size:12px}
+body[data-view=settings] .person-policy-panel{gap:24px}
+body[data-view=settings] .person-area-controls h3{font-size:21px}
+body[data-view=settings] .person-reset button{font-size:12px}
+@media(max-width:760px){body[data-view=settings] .appearance-columns{grid-template-columns:1fr}body[data-view=settings] .person-diagram{height:300px}.person-policy-panel{gap:14px}}
+.bodypix-controls{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-block:0 12px;padding:9px 10px;background:var(--paper);border:1px solid var(--line);border-radius:7px}
+.bodypix-toggle{display:flex;align-items:center;gap:9px;min-width:0;cursor:pointer}
+.bodypix-toggle input{width:16px;height:16px;flex:none;margin:0}
+.bodypix-toggle strong{display:block;font-size:13px;font-weight:650}
+.bodypix-toggle small{display:block;font-size:10px;color:var(--muted);line-height:1.35;margin-top:3px}
+.bodypix-controls select{width:90px;flex:none;font-size:12px;padding-inline:5px}
+.person-reset button[aria-pressed=true]{background:var(--ink);color:var(--white);border-color:var(--ink)}
+body[data-view=popup] .person-diagram{height:240px}
+@media(max-width:420px){.bodypix-controls select{width:82px}}
+
+/* Keep the mode choices visible; reveal effect detail beside the selected face. */
+.image-settings-bar{margin-block:2px 16px}
+.image-settings-bar .setting-field{margin-bottom:12px}
+.inline-face-effect{margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
+.inline-face-effect .range-field{font-size:11px;margin-top:0}
+.inline-face-effect .check-option{font-size:11px;align-items:flex-start}
+.bodypix-toggle strong{font-size:12px}
+.person-area-controls h3{margin-top:14px}
+body[data-view=settings] .image-settings-bar .setting-field{margin-top:0}

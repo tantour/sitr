@@ -10,9 +10,11 @@ flowchart LR
   Host --> Vision[Local vision worker]
   Vision --> Person[YOLO person masks or boxes]
   Vision --> Semantic[MediaPipe still-image regions]
+  Vision --> Anatomy[Optional image-only BodyPix anatomy]
   Vision --> Appearance[YuNet / FastFace / body models]
   Person --> Rules[Tracking and coverage rules]
   Semantic --> Rules
+  Anatomy --> Rules
   Appearance --> Rules
   Rules --> Render[Page overlay or baked background]
   Motion[Local motion worker] --> Render
@@ -36,7 +38,11 @@ YOLO WebGPU graphs retain FP32 weights and move TopK selection to TypeScript.
 Original ONNX graphs are packaged for WASM fallback. MediaPipe runs for still
 images; video avoids that stage. YuNet and FastFace use WASM. Optional Intel and
 Paddle models classify person crops. The rules choose selected/unclassified
-people, coverage regions, skin thresholds, and face effects. Tracking uses
+people, per-gender area policies, and face effects. Optional BodyPix maps label
+only MediaPipe body-skin pixels; neither pose geometry nor a video anatomy stage
+is used. Expansion clips against shown regions, and fully shown people suppress
+semantic border masks. Face layers carry each gender's effect and strength. Removed
+skin-exposure rules are disabled during normalization. Tracking uses
 temporary continuity evidence and resets on scene changes.
 
 Video uses sampled inference with local motion-based mask translation between

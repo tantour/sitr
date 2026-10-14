@@ -10,7 +10,7 @@
 | Playback stalls after a source reload | CORS recovery can reload an anonymous-readable source once. If the host requires authentication or blocks access, try pausing Sitr on that site. |
 | Frequent Strict blackouts | Check model latency, use a lower resolution/performance preset or fast video boxes, and compare with Smooth. Smooth can leave an older mask visible longer. |
 | Excess background is covered | Fast boxes are conservative rectangles. Try silhouette mode or reduce expansion after checking coverage. |
-| Appearance estimate is wrong | Use Everyone to remove dependence on appearance-based selection, or assign a temporary manual label through Diagnostics. Unclassified → Show reduces coverage. |
+| Appearance estimate is wrong | Set Female and Male to Hide all in Images (with Advanced segmentation on), and give both genders the same video effect to remove dependence on appearance-based selection, or assign a temporary manual label through Diagnostics. Unclassified → Show reduces coverage. |
 | Blur fails or looks black | When copying media into an effect canvas fails, Sitr retains a black mask. Low blur intensity can still reveal recognizable shapes. |
 | Site-list edit did not apply | Click Save websites. Entries cover the named hostname, subdomains, and embedded players. |
 | Screenshot or UI differs | Check Sitr's version in All settings, reload the unpacked build, then refresh website tabs. |

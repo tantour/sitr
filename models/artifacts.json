@@ -103,6 +103,20 @@
       "source": "PaddleClas PULC person_attribute_infer official weights converted with paddle2onnx 1.3.1",
       "license": "Apache-2.0",
       "licenseFile": "LICENSES/PaddleClas-Apache-2.0.txt"
+    },
+    {
+      "name": "bodypix-mobilenet075-stride16-257.onnx",
+      "sha256": "7535a67f88e685c63f33b895885ff4de99f24bcb207321a929b71c22b8adc76c",
+      "source": "Official Google BodyPix MobileNet 0.75 quant2, stride 16, dense foreground/24-part heads converted to FP32 ONNX by scripts/export-bodypix.py",
+      "license": "Apache-2.0",
+      "licenseFile": "LICENSES/Apache-2.0.txt"
+    },
+    {
+      "name": "bodypix-mobilenet075-stride8-321.onnx",
+      "sha256": "7715bd6eae71776721ee2c68c2b7c9130ff5f1de5d064865af870862e8b4a2cb",
+      "source": "Official Google BodyPix MobileNet 0.75 quant2, stride 8, dense foreground/24-part heads converted to FP32 ONNX by scripts/export-bodypix.py",
+      "license": "Apache-2.0",
+      "licenseFile": "LICENSES/Apache-2.0.txt"
     }
   ],
   "sourceWeights": {
@@ -137,6 +151,24 @@
       "name": "person_attribute_infer.tar",
       "sha256": "576cc739749021298418e61dfa44362acf427a99e055f302c3f895d638a2bde4",
       "url": "https://paddleclas.bj.bcebos.com/models/PULC/person_attribute_infer.tar",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "bodypix075-stride16.json",
+      "sha256": "7c9b3bd68f86004b75e739255b9b823c4d8f409fabe6dd753b76c0fdd90a357e",
+      "url": "https://storage.googleapis.com/tfjs-models/savedmodel/bodypix/mobilenet/quant2/075/model-stride16.json",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "bodypix075-stride8.json",
+      "sha256": "4ca40fdbae17b32811e6ae43dffd5a177f6dd410f0ddae76ef88a27c4f1200dc",
+      "url": "https://storage.googleapis.com/tfjs-models/savedmodel/bodypix/mobilenet/quant2/075/model-stride8.json",
+      "license": "Apache-2.0"
+    },
+    {
+      "name": "bodypix075-quant2.bin",
+      "sha256": "e215c9546b9db0e1e06c23c759ed48ccaf2aad68c656d0130b5757bc0479ac77",
+      "url": "https://storage.googleapis.com/tfjs-models/savedmodel/bodypix/mobilenet/quant2/075/group1-shard1of1.bin",
       "license": "Apache-2.0"
     }
   ]

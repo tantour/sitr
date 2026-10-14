@@ -2,13 +2,14 @@
 // Copyright (C) 2026 Sitr contributors
 import { DEFAULT_SETTINGS, ENGINE, type Settings } from '../config/settings';
 import type { Track, TrackObservation } from '../state/contracts';
-import { personSelected } from '../rules/evaluate';
+import { categoryHidden, personSelected } from '../rules/evaluate';
+import { policyFor } from '../config/personPolicy';
 
 export interface Composition { observations: TrackObservation[]; ambiguous: Uint8Array; ambiguousByTrack: Uint8Array[]; unassignedMask: Uint8Array; uncertainMask: Uint8Array; uncertainByTrack: Uint8Array[]; unassignedForeground: number }
 
 /** Input masks and semantic categories must describe the same frame and grid. */
 export function compose(tracks: Track[], semantic: Uint8Array, width: number, height: number,
-  settings: Settings = DEFAULT_SETTINGS, fallbackCoverage: Settings['imageCoverage'] = 'regions'): Composition {
+  settings: Settings = DEFAULT_SETTINGS, fallbackCoverage: Settings['imageCoverage'] = 'regions', bodyRegions?: Uint8Array): Composition {
   const count = width * height;
   if (semantic.length !== count || tracks.some(t => t.mask.length !== count)) throw new Error('Mask grid mismatch');
   const owned = tracks.map(() => new Uint8Array(count));
@@ -23,6 +24,9 @@ export function compose(tracks: Track[], semantic: Uint8Array, width: number, he
   const ambiguousCounts = tracks.map(() => 0);
   const ownedCounts = tracks.map(() => 0);
   const skinCounts = tracks.map(() => 0);
+  const policies = settings.personPolicies ? tracks.map(track => policyFor(settings, track)) : [];
+  const unknown = { label: 'unknown' as const, labelUsable: false };
+  const unknownPolicy = settings.personPolicies ? policyFor(settings, unknown) : undefined;
   let unassignedForeground = 0;
   for (let p = 0; p < count; p++) {
     let best = -1, top = 0.5, second = 0;
@@ -34,20 +38,22 @@ export function compose(tracks: Track[], semantic: Uint8Array, width: number, he
     if (best < 0) {
       const category = semantic[p];
       const selectedCategory = fallbackCoverage === 'regions'
-        ? (category === 1 && settings.hair) || (category === 2 && settings.bodySkin) || (category === 3 && settings.faceSkin)
+        ? categoryHidden(settings, unknown, category, bodyRegions?.[p], !!bodyRegions, unknownPolicy)
         : category !== 0 && (category !== 3 || fallbackCoverage === 'whole-body-face');
-      if (selectedCategory && settings.filter !== 'off' && settings.imageUnknown !== 'allow') {
+      if (selectedCategory && (settings.personPolicies || settings.filter !== 'off') && settings.imageUnknown !== 'allow') {
         // A few semantic pixels just outside a known exempt person's instance
         // are not evidence for a different person. Do not paint a black halo.
         const x = p % width, y = Math.floor(p / width);
         let nearbyCount = 0;
         let nearbySelected = true;
-        for (const track of tracks) {
-          if (x < track.box.x * width - 2 || x >= (track.box.x + track.box.width) * width + 2 ||
-            y < track.box.y * height - 2 || y >= (track.box.y + track.box.height) * height + 2) continue;
+        for (const [index, track] of tracks.entries()) {
+          const margin = settings.personPolicies ? settings.imageExpansion + 2 : 2;
+          if (x < track.box.x * width - margin || x >= (track.box.x + track.box.width) * width + margin ||
+            y < track.box.y * height - margin || y >= (track.box.y + track.box.height) * height + margin) continue;
           nearbyCount++;
           if (nearbyCount > 1) break;
-          nearbySelected = personSelected(track, settings, 'image');
+          nearbySelected = settings.personPolicies && fallbackCoverage === 'regions'
+            ? categoryHidden(settings, track, category, bodyRegions?.[p], !!bodyRegions, policies[index]) : personSelected(track, settings, 'image');
         }
         if (nearbyCount !== 1 || nearbySelected) {
           unassignedForeground++; unassignedMask[p] = 255;
@@ -57,10 +63,9 @@ export function compose(tracks: Track[], semantic: Uint8Array, width: number, he
     }
     if (second >= 0.5 && top - second < ENGINE.ownershipMargin) {
       ambiguous[p] = 255;
-      const selectedCategory = (semantic[p] === 1 && settings.hair) || (semantic[p] === 2 && settings.bodySkin) || (semantic[p] === 3 && settings.faceSkin);
       for (let t = 0; t < tracks.length; t++) if (tracks[t].mask[p] >= 0.5) {
         ambiguousCounts[t]++;
-        if (selectedCategory && settings.filter !== 'off') ambiguousByTrack[t][p] = 255;
+        if (categoryHidden(settings, tracks[t], semantic[p], bodyRegions?.[p], !!bodyRegions, policies[t]) && (settings.personPolicies || settings.filter !== 'off')) ambiguousByTrack[t][p] = 255;
       }
       continue;
     }
@@ -83,8 +88,8 @@ export function compose(tracks: Track[], semantic: Uint8Array, width: number, he
   for (let i = 0; i < tracks.length; i++) {
     if (observations[i].exposure.reliable && tracks[i].state !== 'ambiguous') continue;
     for (let p = 0; p < count; p++) {
-      const selectedCategory = (semantic[p] === 1 && settings.hair) || (semantic[p] === 2 && settings.bodySkin) || (semantic[p] === 3 && settings.faceSkin);
-      if (tracks[i].mask[p] >= 0.25 && selectedCategory && settings.filter !== 'off') {
+      const selectedCategory = categoryHidden(settings, tracks[i], semantic[p], bodyRegions?.[p], !!bodyRegions, policies[i]);
+      if (tracks[i].mask[p] >= 0.25 && selectedCategory && (settings.personPolicies || settings.filter !== 'off')) {
         uncertainMask[p] = 255;
         uncertainByTrack[i][p] = 255;
       }

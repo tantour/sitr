@@ -48,6 +48,29 @@ try {
     const context = canvas.getContext('2d'); context.drawImage(decoded.source, 0, 0); decoded.close();
     const output = { overlayBlack: pixel(overlayContext, 30), overlayBlur: pixel(overlayContext, 70),
       backgroundBlack: pixel(context, 30), backgroundBlur: pixel(context, 70) };
+    const left = new Uint8Array(100 * 100), right = new Uint8Array(100 * 100);
+    for (let p = 0; p < left.length; p++) (p % 100 < 50 ? left : right)[p] = 255;
+    const independent = { ...result, rgbaMask: new Uint8Array(100 * 100 * 4), blackMask: undefined, faceMask: undefined,
+      faceLayers: [{ alpha: left, effect: { kind: 'blur', intensity: 16, grayscale: false } }, { alpha: right, effect: { kind: 'black', intensity: 16, grayscale: false } }] };
+    overlay.set(independent);
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    output.independentBlur = pixel(overlayContext, 30); output.independentBlack = pixel(overlayContext, 70);
+    const separate = await Capture.decodeImageBlob(await Background.renderBackground(new Blob([svg], { type: 'image/svg+xml' }), independent));
+    context.clearRect(0, 0, 100, 100); context.drawImage(separate.source, 0, 0); separate.close();
+    output.backgroundIndependentBlur = pixel(context, 30); output.backgroundIndependentBlack = pixel(context, 70);
+    overlay.set({ ...independent, faceLayers: undefined, trackMasks: [{ id: 'male', alpha: left, effect: { kind: 'blur', intensity: 16, grayscale: false } }, { id: 'female', alpha: right, effect: { kind: 'black', intensity: 16, grayscale: false } }], effect: undefined });
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    output.trackBlur = pixel(overlayContext, 30); output.trackBlack = pixel(overlayContext, 70);
+    const debug = { ...result, rgbaMask: new Uint8Array(100 * 100 * 4), blackMask: undefined, faceMask: undefined,
+      debugPersonMasks: [], debugBodyRegions: { labels: new Uint8Array(100).fill(3), width: 10, height: 10 },
+      bodyRegionDiagnostics: { model: 'finer', status: 'ready', backend: 'webgpu' } };
+    overlay.set(debug);
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    output.regionOverlay = pixel(overlayContext, 70);
+    const regionBaked = await Background.renderBackground(new Blob([svg], { type: 'image/svg+xml' }), debug);
+    const regionDecoded = await Capture.decodeImageBlob(regionBaked);
+    context.clearRect(0, 0, 100, 100); context.drawImage(regionDecoded.source, 0, 0); regionDecoded.close();
+    output.regionBackground = pixel(context, 70);
     overlay.clear();
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     output.clearedAlpha = pixel(overlayContext, 70)[3];
@@ -58,6 +81,12 @@ try {
   assert.deepEqual(pixels.backgroundBlack, [0, 0, 0, 255]);
   assert(pixels.overlayBlur[0] > 150, 'The other person must retain its chosen blur effect');
   assert(pixels.backgroundBlur[0] > 150, 'A background must retain its chosen blur outside forced coverage');
+  assert(pixels.independentBlur[0] > 150 && pixels.backgroundIndependentBlur[0] > 150, 'One gender retains its own face blur');
+  assert.deepEqual(pixels.independentBlack, [0, 0, 0, 255]); assert.deepEqual(pixels.backgroundIndependentBlack, [0, 0, 0, 255]);
+  assert(pixels.trackBlur[0] > 150); assert.deepEqual(pixels.trackBlack, [0, 0, 0, 255]);
+  assert.equal(pixels.regionOverlay[3], 105, 'Region diagnostics must paint even without person contours');
+  assert(pixels.regionOverlay[2] > 200 && pixels.regionOverlay[0] > 140, 'Forearm region palette is purple');
+  assert(pixels.regionBackground[2] > 100, 'CSS backgrounds must include the same region diagnostic colors');
   assert.equal(pixels.clearedAlpha, 0, 'An old effect must disappear when the entire image is protected');
   console.log('PASS: threshold coverage stays fully black over body and face blur, in overlays and CSS backgrounds.');
 } finally { await browser.close(); }

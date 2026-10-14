@@ -68,17 +68,17 @@ async function main() {
   const args = process.argv.slice(2);
   if (!args.length || args[0] === '--verify') {
     if (args.length > 1) throw new Error('Unexpected arguments');
-    await verifyModels(); console.log('All 13 model hashes verified.'); return;
+    await verifyModels(); console.log(`All ${(await manifest()).artifacts.length} model hashes verified.`); return;
   }
   if (args[0] === '--archive' && args.length === 2) {
     await installArchive(await readFile(resolve(args[1])));
-    console.log('Installed and verified all 13 models.'); return;
+    console.log(`Installed and verified all ${(await manifest()).artifacts.length} models.`); return;
   }
   if (args[0] === '--url' && args[2] === '--sha256' && args.length === 4) {
     if (!/^[a-f0-9]{64}$/i.test(args[3])) throw new Error('Expected a SHA-256 hex digest');
     const bytes = await download(args[1]);
     if (sha256(bytes) !== args[3].toLowerCase()) throw new Error('Model archive SHA-256 mismatch');
-    await installArchive(bytes); console.log('Installed and verified all 13 models.'); return;
+    await installArchive(bytes); console.log(`Installed and verified all ${(await manifest()).artifacts.length} models.`); return;
   }
   if (args[0] === '--sources' && args.length === 1) {
     const data = await manifest();

@@ -11,10 +11,12 @@ const count = Number(process.env.PERF_COUNT || 24);
 const repetitions = Number(process.env.PERF_REPETITIONS || 3);
 const durationMinutes = Number(process.env.PERF_DURATION_MINUTES || 0);
 const requestedBackend = process.env.PERF_BACKEND;
+const bodyRegionMode = process.env.PERF_BODY_REGIONS || 'off';
 if (!Number.isInteger(count) || count < 1 || count > 100 || !Number.isInteger(repetitions) || repetitions < 1 || repetitions > 10 ||
     !Number.isFinite(durationMinutes) || durationMinutes < 0 || durationMinutes > 30 ||
+    !['off', 'faster', 'finer'].includes(bodyRegionMode) ||
     (requestedBackend && !['wasm', 'webgpu'].includes(requestedBackend))) {
-  throw new Error('PERF_COUNT must be 1–100, PERF_REPETITIONS must be 1–10, PERF_DURATION_MINUTES must be 0–30, and PERF_BACKEND must be wasm or webgpu');
+  throw new Error('PERF_COUNT must be 1–100, PERF_REPETITIONS must be 1–10, PERF_DURATION_MINUTES must be 0–30, PERF_BACKEND must be wasm or webgpu, and PERF_BODY_REGIONS must be off, faster, or finer');
 }
 const fixtureNames = ['bus.jpg', 'woman-profile.jpg', 'man-profile.jpg'];
 const fixtures = new Map(await Promise.all(fixtureNames.map(async name => [name, await readFile(resolve(root, 'tests/fixtures', name))])));
@@ -38,12 +40,13 @@ try {
   if (process.env.PERF_THREADS && !['1', '2', '4', '6', '8', '12', '16'].includes(process.env.PERF_THREADS)) {
     throw new Error('PERF_THREADS must be 1, 2, 4, 6, 8, 12, or 16');
   }
-  if (process.env.PERF_THREADS || process.env.PERF_SEMANTIC_PARALLEL === '1' || process.env.PERF_BACKEND) {
+  if (process.env.PERF_THREADS || process.env.PERF_SEMANTIC_PARALLEL === '1' || process.env.PERF_BACKEND || bodyRegionMode !== 'off') {
     const extensionWorker = browser.serviceWorkers()[0] ?? await browser.waitForEvent('serviceworker');
     await extensionWorker.evaluate(async options => {
-      if (options.threads) {
+      if (options.threads || options.bodyRegionMode !== 'off') {
         const current = (await chrome.storage.local.get('settings')).settings || {};
-        await chrome.storage.local.set({ settings: { ...current, onnxThreads: options.threads, revision: (current.revision || 0) + 1 } });
+        await chrome.storage.local.set({ settings: { ...current, ...(options.threads ? { onnxThreads: options.threads } : {}),
+          imageBodyRegionMode: options.bodyRegionMode, revision: (current.revision || 0) + 1 } });
       }
       if (options.parallelSemantic) {
         if (!await chrome.offscreen.hasDocument()) await chrome.offscreen.createDocument({ url: 'offscreen.html', reasons: [chrome.offscreen.Reason.WORKERS], justification: 'Browser performance comparison' });
@@ -54,7 +57,7 @@ try {
         await chrome.runtime.sendMessage({ type: 'retry-engine', backend: options.backend });
       }
     }, { threads: Number(process.env.PERF_THREADS) || undefined,
-      parallelSemantic: process.env.PERF_SEMANTIC_PARALLEL === '1', backend: process.env.PERF_BACKEND });
+      parallelSemantic: process.env.PERF_SEMANTIC_PARALLEL === '1', backend: process.env.PERF_BACKEND, bodyRegionMode });
   }
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -107,6 +110,7 @@ try {
         revealMs: Number(image.dataset.localMediaCensorRevealMs),
         acquireMs: Number(image.dataset.localMediaCensorAcquireMs),
         timings: JSON.parse(image.dataset.localMediaCensorTimingsMs || '{}'),
+        bodyRegions: JSON.parse(image.dataset.localMediaCensorBodyRegions || '{}'),
         status: image.dataset.localMediaCensorStatus,
       })),
     }), started);
@@ -119,7 +123,10 @@ try {
       uncachedPersonRunMs: uncached.length ? Math.round(uncached.reduce((sum, image) => sum + (image.timings.personRun || 0), 0) / uncached.length) : null,
       backends: [...new Set(uncached.map(image => image.timings.backend).filter(Boolean))],
       threads: [...new Set(result.images.map(image => image.timings.onnxThreads).filter(Boolean))],
-      meanStagesMs: Object.fromEntries(['acquire', 'queue', 'personRun', 'personDecode', 'semantic', 'semanticRun', 'face', 'faceRun', 'gender', 'genderRun', 'composition', 'render']
+      bodyRegionModels: [...new Set(result.images.map(image => image.bodyRegions.model).filter(Boolean))],
+      bodyRegionBackends: [...new Set(result.images.map(image => image.bodyRegions.backend).filter(Boolean))],
+      bodyRegionFallbacks: result.images.filter(image => image.bodyRegions.status === 'fallback').length,
+      meanStagesMs: Object.fromEntries(['acquire', 'queue', 'personRun', 'personDecode', 'semantic', 'semanticRun', 'bodyRegions', 'bodyRegionPreprocess', 'bodyRegionRun', 'bodyRegionDecode', 'face', 'faceRun', 'gender', 'genderRun', 'composition', 'render']
         .map(key => [key, Math.round(result.images.reduce((sum, image) => sum + (image.timings[key] || 0), 0) / count)])),
       statuses: [...new Set(result.images.map(image => image.status))],
     });

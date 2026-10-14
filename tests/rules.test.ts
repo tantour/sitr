@@ -113,7 +113,7 @@ describe('model resolution settings', () => {
       imageWholeBodyFaceEffect: 'blur', imageFaceEffectIntensity: 100, imageFaceEffectGrayscale: true });
     expect([custom.imageCoverage, custom.imageRegionFaceEffect, custom.imageWholeBodyFaceEffect,
       custom.imageFaceEffectIntensity, custom.imageFaceEffectGrayscale])
-      .toEqual(['whole-body-face', 'checkerboard', 'blur', 64, true]);
+      .toEqual(['whole-body', 'checkerboard', 'blur', 64, true]);
     expect(normalizeSettings({ imageRegionFaceEffect: 'invalid' as 'blur' }).imageRegionFaceEffect).toBe('show');
   });
   it('requires the selected evidence before applying image censorship', () => {

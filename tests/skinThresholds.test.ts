@@ -84,9 +84,15 @@ describe('threshold body rendering', () => {
 });
 
 describe('threshold settings', () => {
+  it('disables removed rules saved in an existing profile', () => {
+    const settings = normalizeSettings({ imageSkinThresholdEnabled: true, imageGroupSkinThresholdEnabled: true,
+      imageSkinThresholdIncludeFace: true });
+    expect([settings.imageSkinThresholdEnabled, settings.imageGroupSkinThresholdEnabled, settings.imageSkinThresholdIncludeFace])
+      .toEqual([false, false, false]);
+  });
   it('migrates older settings with both new features off and the example defaults', () => {
     const settings = normalizeSettings({ schemaVersion: 15 });
-    expect(settings.schemaVersion).toBe(16);
+    expect(settings.schemaVersion).toBe(19);
     expect([settings.imageSkinThresholdEnabled, settings.imageGroupSkinThresholdEnabled]).toEqual([false, false]);
     expect([settings.imageSkinThresholdPercent, settings.imageGroupSkinThresholdPercent, settings.imageGroupSkinPeopleLimit]).toEqual([80, 70, 3]);
   });
@@ -94,7 +100,7 @@ describe('threshold settings', () => {
     const settings = normalizeSettings({ imageSkinThresholdPercent: 120, imageGroupSkinThresholdPercent: -5,
       imageGroupSkinPeopleLimit: 999, imageSkinThresholdEnabled: 'true', imageGroupSkinThresholdEnabled: true });
     expect([settings.imageSkinThresholdPercent, settings.imageGroupSkinThresholdPercent, settings.imageGroupSkinPeopleLimit]).toEqual([100, 0, 19]);
-    expect([settings.imageSkinThresholdEnabled, settings.imageGroupSkinThresholdEnabled]).toEqual([false, true]);
+    expect([settings.imageSkinThresholdEnabled, settings.imageGroupSkinThresholdEnabled]).toEqual([false, false]);
     expect(normalizeSettings({ imageSkinThresholdPercent: Number.NaN }).imageSkinThresholdPercent).toBe(80);
     expect(normalizeSettings({ imageGroupSkinPeopleLimit: .2 }).imageGroupSkinPeopleLimit).toBe(1);
   });

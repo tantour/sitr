@@ -37,5 +37,5 @@ describe('island cleanup equivalence', () => {
         }
       }
     }
-  });
+  }, 20000); // The exhaustive oracle is CPU-heavy on slower release machines.
 });

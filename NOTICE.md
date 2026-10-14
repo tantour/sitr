@@ -8,6 +8,7 @@ The following third-party dependencies and model artifacts retain their licenses
 
 | Artifact | Version/source | License information |
 |---|---|---|
+| BodyPix MobileNet 0.75 dense-region ONNX weights | Official Google quant2 stride-16/stride-8 graphs; source hashes and conversion pinned in `models/artifacts.json` | Copyright 2019 Google Inc.; [Apache-2.0](LICENSES/Apache-2.0.txt), [original implementation](https://github.com/tensorflow/tfjs-models/tree/master/body-pix) |
 | YOLO26n-seg ONNX weights | Exported from Ultralytics `yolo26n-seg.pt`, assets release v8.4.0 | [Ultralytics AGPL/enterprise terms](https://www.ultralytics.com/license) |
 | YOLO26n detection ONNX weights | Exported from Ultralytics `yolo26n.pt`, assets release v8.4.0 | [Ultralytics AGPL/enterprise terms](https://www.ultralytics.com/license) |
 | MediaPipe Tasks Vision and SelfieMulticlass model | `@mediapipe/tasks-vision` 1.0.1; official Google model URL in `models/artifacts.json` | [MediaPipe Apache-2.0 license](https://github.com/google-ai-edge/mediapipe/blob/master/LICENSE) and [model card](https://storage.googleapis.com/mediapipe-assets/Model%20Card%20Multiclass%20Segmentation.pdf) |

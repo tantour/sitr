@@ -6,7 +6,7 @@
 
 Sitr is a Chrome extension that covers selected people in supported images and videos. Choose skin and hair coverage or whole-person coverage, use black masks, blur, or a pixelated mosaic, and tune images and videos separately. English and Arabic interfaces include light, dark, and system themes.
 
-![Sitr popup](docs/images/popup.png)
+<img src="docs/images/popup.png" width="440" alt="Sitr 0.5.0 main controls: protection, media tabs, cover area, and Advanced segmentation">
 
 **Requires Chrome 148 or newer.** Sitr uses local AI estimates that can miss people, misclassify appearance, or leave parts of moving media uncovered. It does not guarantee that every unwanted image or video frame is hidden. [Supported media and limitations](#supported-media-and-limitations).
 
@@ -14,7 +14,7 @@ Sitr is a Chrome extension that covers selected people in supported images and v
 
 ### From a GitHub release
 
-1. Open this repository's **Releases** page and download `sitr-0.4.2-chrome.zip` and `SHA256SUMS.txt`.
+1. Open [Sitr v0.5.0](https://github.com/tantour/sitr/releases/tag/v0.5.0) release page and download `sitr-0.5.0-chrome.zip` and `SHA256SUMS.txt`.
 2. Verify the ZIP's SHA-256 against the checksum file, then extract it into a permanent folder. Do not load the ZIP itself.
 3. Visit `chrome://extensions`, turn on **Developer mode**, and choose **Load unpacked**.
 4. Select the extracted folder containing `manifest.json`. Pin **Sitr** using Chrome's extensions menu.
@@ -30,39 +30,66 @@ Use **Node.js 22.12+**, npm, and Git. Model binaries live in release assets to k
 
 ```sh
 npm ci
-# Download sitr-0.4.2-models.zip from this repository's Releases page first.
-npm run models -- --archive /path/to/sitr-0.4.2-models.zip
+# Download sitr-0.5.0-models.zip from the matching release first.
+npm run models -- --archive /path/to/sitr-0.5.0-models.zip
 npm run check
 npm run build
 npm run verify:release
 ```
 
-Load `dist/` using the same Chrome steps above. Commands also work in PowerShell; use `npm.cmd` if your execution policy blocks `npm.ps1`. The model installer checks all thirteen pinned hashes before replacing files. For source-weight downloads, export instructions, and reproducibility details, see [models/README.md](models/README.md).
+Load `dist/` using the same Chrome steps above. Commands also work in PowerShell; use `npm.cmd` if your execution policy blocks `npm.ps1`. The model installer checks all fifteen pinned hashes before replacing files. For source-weight downloads, export instructions, and reproducibility details, see [models/README.md](models/README.md).
 
 ## What you can control
 
-- **People:** female appearance, male appearance, everyone, or no one. Automatic labels estimate visible appearance; they do not establish identity or a person's gender. Unclassified people are covered by default.
-- **Images:** cover skin and hair, a whole silhouette with a face opening, or the whole silhouette including the face. Faces can be shown, blacked out, blurred, or pixelated where the selected coverage permits it.
+- **Gender tabs:** choose image areas independently for Female and Male with a clickable person diagram. Automatic labels estimate visible appearance; they do not establish identity or gender.
+- **Images:** choose exposed skin and hair areas, or Whole body to include clothing. Faces have separate Show, Black, Blur, and Pixelate actions; blur/pixelation strength is independent for each gender.
+- **Advanced segmentation:** optional, image-only anatomy detection powered by BodyPix. **Fast** adds less processing; **Quality** is slower with finer detail. Keep it off for grouped body skin with separate face and hair choices.
 - **Videos:** whole-person silhouettes or faster conservative person boxes, with motion correction between sampled analyses. Select Smooth or Strict playback.
 - **Effects:** black, normal blur, and checkerboard blur, with independent intensity, grayscale, and mask-expansion controls. Skin and hair regions use black masks.
 - **Sites:** pause on the current site or maintain domain exceptions that also apply to its subdomains and embedded players.
-- **Advanced settings:** separate appearance models, image detection gates, optional skin-coverage thresholds, model resolution, CPU threads, and diagnostic outlines.
+- **Advanced settings:** separate appearance models, image detection gates, model resolution, CPU threads, and diagnostic outlines.
 
 <p><img src="docs/images/popup-en-dark.png" width="360" alt="English dark-theme popup"> <img src="docs/images/popup-ar-light.png" width="360" alt="Arabic popup with right-to-left controls"></p>
 
 ## Examples
 
+In **Images**, enable the visible **Advanced segmentation** switch, choose **Male → Show all**, click the thighs on the person,
+and choose **Hide** to cover only exposed thigh skin. Face, hair, neck and
+other shown areas keep their own choices. The Female tab is independent.
+Click a face to choose Show, Black, Blur or Pixelate. Blur and Pixelate show a strength slider directly below; strength is separate for each gender.
+
+The switch offers **Fast** (stride 16) and **Quality** (stride 8, slower with finer detail). With Advanced segmentation off,
+the body becomes one skin area with Show all / Hide all; face and hair remain
+independent. Advanced segmentation adds processing time and
+can misclassify overlaps. Torso combines chest and belly, and neck is estimated
+from head-labeled body skin. Videos use each gender's whole-person effect.
+
+Advanced segmentation is disabled by default. Diagnostic outlines add colored skin-region
+maps; media attributes include `data-local-media-censor-body-regions` and
+BodyPix preprocessing/run/decode timing fields. Cached policy changes report
+zero new model work. See [body-region controls and diagnostics](docs/BODY-REGIONS.md).
+
 | Goal | Settings |
 |---|---|
-| Cover everyone without depending on appearance classification | Set **Cover people → Everyone**, **Unclassified people → Censor** for both media types, and Images **Cover area → Whole body · same effect on face**. Use **Black** effects. |
-| Cover female-appearance skin and hair | Keep the default **Female appearance** filter, image skin/hair coverage, and **Unclassified people → Censor**. The default leaves faces shown. |
-| Blur whole people in images, pixelate them in videos | Choose an image whole-body mode and **Blur**; switch to **Videos** and choose **Checkerboard blur**. Adjust each intensity separately. |
-| Keep one website unrestricted | Click **Pause on this site**. Use **All settings → Websites** for a list such as `example.com` or a pasted HTTP(S) URL, then click **Save websites**. |
-| Diagnose an image that stays black | Open **All settings → Diagnostics**, inspect status, and retry the engine. Follow [troubleshooting](docs/TROUBLESHOOTING.md). |
+| Hide male thigh skin only | Advanced segmentation on → Male → Show all → click thighs → Hide. |
+| Leave men entirely visible | Male → Show all in Images; Videos → Male → Show. |
+| Cover female skin and hair, show face | Female → Hide all → click face → Show. |
+| Blur male faces but black female faces | Male → face → Blur; Female → face → Black. |
+| Keep one website unrestricted | Pause on this site, or manage domain exceptions in All settings → Websites. |
+
+### Area choices and face effects
+
+The main controls stay above the gender editor. Scroll within the popup to choose an area. With Advanced segmentation on, the diagram controls individual skin areas; with it off, Show all / Hide all change body skin together and preserve face/hair choices.
+
+<p><img src="docs/images/popup-areas.png" width="360" alt="Male editor with only thigh skin hidden"> <img src="docs/images/popup-face.png" width="360" alt="Male face blur with its strength directly below the action buttons"></p>
+
+<p><img src="docs/images/popup-basic.png" width="360" alt="Basic segmentation with one body-skin shape and separate face and hair"> <img src="docs/images/settings-ar.png" width="340" alt="Arabic settings with right-to-left body-area controls"></p>
+
+Cover area has Chosen areas and Whole body. The face always has its own effect. Skin-exposure blackout rules and the old shared face-effect mode have been removed; saved exposure rules are disabled when settings load.
 
 ![Real local fixture with whole-person black coverage](docs/images/coverage-example.png)
 
-The coverage example is a local fixture with **Everyone** selected; it demonstrates rendering, not accuracy on unseen content. The popup/settings images use deterministic test status data. The photograph is from Ultralytics assets; see [fixture attribution](tests/fixtures/README.md).
+The coverage example uses this release with both gender policies set to Hide all, Whole body coverage, and Black face effects; it demonstrates rendering, not accuracy on unseen content. The popup/settings images use deterministic test status data. The photograph is from Ultralytics assets; see [fixture attribution](tests/fixtures/README.md).
 
 ![Full settings](docs/images/settings-desktop.png)
 
@@ -82,6 +109,12 @@ Animated images, DRM/unreadable streams, canvas players, browser-internal pages,
 
 This is a browser filtering aid. It does not interpret religious rules or determine whether content is permissible. Validate the settings on the content you use. [Detailed behavior](docs/USER_GUIDE.md), [architecture](docs/ARCHITECTURE.md), and [measured performance](BENCHMARK.md) explain the practical limits. Historical benchmark numbers are not a release-wide performance guarantee.
 
+## What changed in 0.5.0
+
+This second release adds the interactive gender/area editor, optional Fast/Quality anatomy segmentation, separate face strengths, and diagnostics for body regions and cached inference. Shown areas resist mask expansion, including fully shown hair and neck; the upper-arm/forearm labels now cover both arms correctly. It also includes live-video source handling and rotating analysis for Google Meet tiles. Existing coverage settings migrate to the new editor.
+
+The optional segmentation stage adds approximately **34 ms (Fast)** or **94 ms (Quality)** in the measured warm WebGPU fixture on an Intel i5-8250U/UHD 620, with roughly **9.84 MB** of additional packaged weights. Cold startup can take seconds; these are local fixture results, not timing guarantees. Changing area or face-strength choices reuses cached image inference. [Details and limitations](docs/BODY-REGIONS.md).
+
 ## Development and releases
 
 ```sh
@@ -92,7 +125,7 @@ npm run test:browser            # UI, real extension, media and regression check
 npm run release                # Checks, build, browser suite, ZIPs and SHA-256
 ```
 
-The release command writes the extension, corresponding source, and model ZIPs to `release/`. Publish all three together. [Validation results](docs/VALIDATION.md) · [Contribution guide](CONTRIBUTING.md) · [Release instructions](docs/RELEASING.md) · [Security reporting](SECURITY.md) · [Changelog](CHANGELOG.md).
+The release command writes the extension, corresponding source, and model ZIPs to `release/v0.5.0/`. Publish all three and the checksums together. Packaging is local and never creates a commit, tag, or GitHub release. [Prepared release notes](docs/RELEASE-NOTES-0.5.0.md) · [Validation results](docs/VALIDATION.md) · [Contribution guide](CONTRIBUTING.md) · [Release instructions](docs/RELEASING.md) · [Security reporting](SECURITY.md) · [Changelog](CHANGELOG.md).
 
 ## License
 

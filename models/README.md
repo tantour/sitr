@@ -2,12 +2,15 @@
 
 ## Install the release bundle (recommended)
 
-Download `sitr-0.4.2-models.zip` and `SHA256SUMS.txt` from this repository's
-GitHub Releases page. In the project root, with Node.js 22.12+:
+Download `sitr-0.5.0-models.zip` and `SHA256SUMS.txt` from the
+[matching release](https://github.com/tantour/sitr/releases/tag/v0.5.0). This
+source requires fifteen pinned models, including the two optional BodyPix
+variants. The 0.4.2 bundle contains thirteen and cannot build 0.5.0.
+Use Node.js 22.12+:
 
 ```sh
 npm ci
-npm run models -- --archive /path/to/sitr-0.4.2-models.zip
+npm run models -- --archive /path/to/sitr-0.5.0-models.zip
 npm run models
 npm run build
 ```
@@ -19,11 +22,30 @@ entries are extracted, and the complete bundle is validated before files change.
 Original YOLO weights are installed under models/; Intel/Paddle inputs are
 installed under models/sources/ for export work. They are excluded from dist/.
 
-Packaged model binaries are downloaded or exported locally and are intentionally excluded from Git. `artifacts.json` pins the thirteen shipped artifacts by SHA-256 and identifies their licenses. The build refuses to package a different binary. The 640-pixel ONNX file and PyTorch weights are export/reference inputs and are not shipped in `dist`.
+Packaged model binaries are downloaded or exported locally and are intentionally excluded from Git. `artifacts.json` pins the fifteen shipped artifacts by SHA-256 and identifies their licenses. The build refuses to package a different binary. The 640-pixel ONNX file and PyTorch weights are export/reference inputs and are not shipped in `dist`.
 
-All thirteen files are required to build this distribution, including models for
+All fifteen files are required to build this distribution, including models for
 optional features. Choosing a different classifier in the UI does not change the
 bundle's required files.
+
+## Advanced segmentation (BodyPix image regions)
+
+`scripts/export-bodypix.py` uses three pinned `bodypix075-*` source files
+installed under `models/sources/` by `npm run models -- --sources`. With ONNX
+1.23.0 and NumPy it translates official Google MobileNet 0.75 quant2 graphs
+to FP32 ONNX, retaining foreground/24-part logits and dropping pose/offset
+heads. It verifies source hashes; no retraining or pose geometry is added.
+
+- `bodypix-mobilenet075-stride16-257.onnx`: **Fast**, 257×257 input, 17×17 logits.
+- `bodypix-mobilenet075-stride8-321.onnx`: **Quality**, slower with finer detail, 321×321 input,
+  41×41 logits.
+
+Each model is about 4.92 MB and reuses ONNX Runtime Web with captured WebGPU
+and WASM fallback. TensorFlow.js is not shipped. Original and converted outputs
+were compared on photograph/noise tensors, with maximum logit differences
+below 0.000026 in local research. Weights/code are Apache-2.0; attribution and
+license are packaged. Parts can still be misclassified, especially overlaps.
+Both variants are off by default and image-only.
 
 ## Rebuild from upstream inputs
 
@@ -36,7 +58,8 @@ is pinned to a specific Hugging Face repository revision.
 
 With Python and `scripts/requirements-models.txt` installed in a separate virtual
 environment, run `python scripts/export-models.py`, then
-`python scripts/export-gpu-models.py`. Body conversions are shown below.
+`python scripts/export-gpu-models.py`, then `python scripts/export-bodypix.py`.
+Body-gender conversions are shown below.
 These are maintainer workflows; ordinary extension installation needs no Python.
 Serialization can vary between converter dependency versions. Do not rewrite
 artifacts.json to make an unvalidated export pass. Use the release bundle for the

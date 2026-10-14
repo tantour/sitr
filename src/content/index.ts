@@ -6,6 +6,7 @@ import { captureSquare, decodeImageBlob, sourceIsStatic } from '../media/capture
 import { FrameMotion } from '../media/frameMotionClient';
 import { Overlay } from '../rendering/overlay';
 import { imageAnalysisKey } from '../config/imageAnalysis';
+import { hasFaceEffects } from '../config/personPolicy';
 import { BackgroundImages, type BackgroundSurface } from '../media/backgroundImages';
 import { SharedImageWork } from '../media/sharedImageWork';
 import { imageLookAheadPx, imageWorkRange } from '../media/imageWorkRange';
@@ -63,7 +64,7 @@ function prepareEngine(kind: 'image' | 'video' = 'image'): void {
         (kind === 'image' && (['face', 'either', 'both'].includes(settings.imageDetectionGate) ||
           (settings.imageSkinThresholdEnabled && !settings.imageSkinThresholdIncludeFace) ||
           settings.imageCoverage === 'whole-body' ||
-          (settings.imageCoverage === 'regions' && settings.imageRegionFaceEffect !== 'show'))),
+          (settings.imageCoverage === 'regions' && hasFaceEffects(settings)))),
       gender: settings.automaticGender, threads });
   }).catch(() => { preparingEngine = undefined; });
 }
@@ -98,7 +99,7 @@ async function analyzeImageSource(node: HTMLImageElement, source: string, curren
     current.faceAssociation || current.debugOverlay ||
     ['face', 'either', 'both'].includes(current.imageDetectionGate) ||
     current.imageCoverage === 'whole-body' ||
-    (current.imageCoverage === 'regions' && current.imageRegionFaceEffect !== 'show')
+    (current.imageCoverage === 'regions' && hasFaceEffects(current))
     ? current.faceCaptureSize : undefined;
   let rgba: Uint8Array | undefined;
   let faceRgba: Uint8Array | undefined;
@@ -415,6 +416,8 @@ class MediaController {
     this.node.dataset.localMediaCensorSequence = String(result.key.sequence);
     if (result.timingsMs) this.node.dataset.localMediaCensorTimingsMs = JSON.stringify(result.timingsMs);
     if (result.genderDiagnostics) this.node.dataset.localMediaCensorGender = JSON.stringify(result.genderDiagnostics);
+    if (result.bodyRegionDiagnostics) this.node.dataset.localMediaCensorBodyRegions = JSON.stringify(result.bodyRegionDiagnostics);
+    else delete this.node.dataset.localMediaCensorBodyRegions;
     const lateVideo = this.node instanceof HTMLVideoElement && !this.node.paused &&
       (Date.now() - result.capturedAtMs > ENGINE.maxResultAgeMs ||
         (result.mediaTimeSec !== undefined && Math.abs(this.node.currentTime - result.mediaTimeSec) > ENGINE.maxResultAgeMs / 1000));

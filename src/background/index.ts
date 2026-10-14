@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Sitr contributors
 import { DEFAULT_SETTINGS, normalizeSettings, resolveOnnxThreads, type Settings } from '../config/settings';
+import { editablePolicies } from '../config/personPolicy';
 
 let creating: Promise<void> | undefined;
 let settingWrites: Promise<void> = Promise.resolve();
@@ -30,6 +31,14 @@ chrome.runtime.onMessage.addListener((message: { type?: string; patch?: Partial<
     const write = settingWrites.then(async () => {
       const old = await current();
       const next = normalizeSettings({ ...old, ...message.patch, revision: old.revision + 1 });
+      // Older automation clients still send the former controls. Translate that
+      // explicit request into the diagram policy instead of silently ignoring it.
+      if (old.personPolicies && message.patch && !message.patch.personPolicies &&
+          ['filter', 'bodySkin', 'hair', 'imageFemaleAllowedRegions', 'imageMaleAllowedRegions', 'imageRegionFaceEffect', 'imageWholeBodyFaceEffect', 'videoEffect']
+            .some(field => Object.hasOwn(message.patch!, field))) {
+        delete next.personPolicies;
+        next.personPolicies = editablePolicies(next);
+      }
       if (next.onnxThreads !== old.onnxThreads) {
         await ensureOffscreen();
         await chrome.runtime.sendMessage({ type: 'retry-engine', threads: resolveOnnxThreads(next.onnxThreads, navigator.hardwareConcurrency) });

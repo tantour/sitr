@@ -9,10 +9,12 @@ export class Overlay {
   private blurCanvas = document.createElement('canvas');
   private staticCanvas?: HTMLCanvasElement;
   private faceCanvas?: HTMLCanvasElement;
+  private faceCanvases: Array<{ canvas: HTMLCanvasElement; effect: NonNullable<AnalysisResult['faceEffect']> }> = [];
   private blackCanvas?: HTMLCanvasElement;
   private faceLayerCanvas = document.createElement('canvas');
   private trackCanvases = new Map<string, HTMLCanvasElement>();
   private debugCanvases = new Map<string, HTMLCanvasElement>();
+  private bodyRegionCanvas?: HTMLCanvasElement;
   private motion = new Map<string, { x: number; y: number }>();
   private bitmap?: CanvasRenderingContext2D;
   private frame?: AnalysisResult;
@@ -69,8 +71,10 @@ export class Overlay {
   getFrame(): AnalysisResult | undefined { return this.frame; }
   clear(): void {
     this.frame = undefined;
+    this.bodyRegionCanvas = undefined;
     this.staticCanvas = undefined;
     this.faceCanvas = undefined;
+    this.faceCanvases = [];
     this.blackCanvas = undefined;
     this.trackCanvases.clear();
     this.debugCanvases.clear();
@@ -91,6 +95,20 @@ export class Overlay {
   }
   set(result: AnalysisResult): void {
     this.frame = result;
+    this.bodyRegionCanvas = undefined;
+    if (result.debugBodyRegions) {
+      const { labels, width, height } = result.debugBodyRegions;
+      const layer = document.createElement('canvas'); layer.width = width; layer.height = height;
+      const ctx = layer.getContext('2d');
+      if (ctx) {
+        const image = ctx.createImageData(width, height);
+        const colors = [[0, 0, 0], [240, 55, 65], [60, 140, 255], [155, 90, 235], [245, 210, 60], [225, 65, 190], [45, 195, 95], [45, 205, 215], [235, 155, 45]];
+        for (let p = 0; p < labels.length; p++) if (labels[p] > 0 && labels[p] < colors.length)
+          image.data.set([...colors[labels[p]], 105], p * 4);
+        ctx.putImageData(image, 0, 0);
+        this.bodyRegionCanvas = layer;
+      }
+    }
     if (!result.trackMasks) {
       if (this.maskCanvas.width !== result.width) this.maskCanvas.width = result.width;
       if (this.maskCanvas.height !== result.height) this.maskCanvas.height = result.height;
@@ -101,6 +119,7 @@ export class Overlay {
     }
     this.staticCanvas = result.staticMask ? this.layerCanvas(result.staticMask, result.width, result.height, this.staticCanvas) : undefined;
     this.faceCanvas = result.faceMask ? this.layerCanvas(result.faceMask, result.width, result.height, this.faceCanvas) : undefined;
+    this.faceCanvases = (result.faceLayers ?? []).map((layer, index) => ({ canvas: this.layerCanvas(layer.alpha, result.width, result.height, this.faceCanvases[index]?.canvas), effect: layer.effect }));
     this.blackCanvas = result.blackMask ? this.layerCanvas(result.blackMask, result.width, result.height, this.blackCanvas) : undefined;
     const active = new Set<string>();
     for (const mask of result.trackMasks || []) {
@@ -229,7 +248,13 @@ export class Overlay {
           const shift = this.motion.get(mask.id);
           const mx = (shift?.x ?? 0) * s * renderedW / sourceW;
           const my = (shift?.y ?? 0) * s * renderedH / sourceH;
-          ctx.drawImage(layer, sx, sy, sourceW, sourceH, dx + mx, dy + my, renderedW, renderedH);
+          if (mask.effect && mask.effect.kind !== 'black') {
+            this.faceLayerCanvas.width = cw; this.faceLayerCanvas.height = ch;
+            const temporary = this.faceLayerCanvas.getContext('2d')!;
+            temporary.drawImage(layer, sx, sy, sourceW, sourceH, dx + mx, dy + my, renderedW, renderedH);
+            this.drawEffect(temporary, dx, dy, renderedW, renderedH, mask.effect);
+            ctx.drawImage(this.faceLayerCanvas, 0, 0);
+          } else ctx.drawImage(layer, sx, sy, sourceW, sourceH, dx + mx, dy + my, renderedW, renderedH);
         }
       } else ctx.drawImage(this.maskCanvas, sx, sy, sourceW, sourceH, dx, dy, renderedW, renderedH);
       this.drawEffect(ctx, dx, dy, renderedW, renderedH, this.frame.effect);
@@ -245,9 +270,28 @@ export class Overlay {
           ctx.drawImage(this.faceLayerCanvas, 0, 0);
         }
       }
+      for (const layer of this.faceCanvases) {
+        this.faceLayerCanvas.width = cw; this.faceLayerCanvas.height = ch;
+        const temporary = this.faceLayerCanvas.getContext('2d')!;
+        temporary.drawImage(layer.canvas, sx, sy, sourceW, sourceH, dx, dy, renderedW, renderedH);
+        this.drawEffect(temporary, dx, dy, renderedW, renderedH, layer.effect);
+        ctx.drawImage(this.faceLayerCanvas, 0, 0);
+      }
       if (this.blackCanvas) ctx.drawImage(this.blackCanvas, sx, sy, sourceW, sourceH, dx, dy, renderedW, renderedH);
-      if (this.frame.debugPersonMasks?.length) {
-        const debugScale = this.frame.debugPersonMasks[0].width / s;
+      if (this.frame.debugPersonMasks) {
+        if (this.bodyRegionCanvas) {
+          const debugScale = this.bodyRegionCanvas.width / s;
+          ctx.drawImage(this.bodyRegionCanvas, sx * debugScale, sy * debugScale, sourceW * debugScale, sourceH * debugScale,
+            dx, dy, renderedW, renderedH);
+        }
+        if (this.frame.bodyRegionDiagnostics && this.frame.bodyRegionDiagnostics.model !== 'off' && !(this.media instanceof HTMLVideoElement)) {
+          const diagnostic = this.frame.bodyRegionDiagnostics;
+          const text = `Advanced segmentation ${diagnostic.model === 'finer' ? 'Quality' : 'Fast'} · ${diagnostic.status} · ${diagnostic.backend ?? 'no inference'} · ${Math.round(this.frame.timingsMs?.bodyRegions ?? 0)} ms`;
+          ctx.font = `${Math.max(10, 11 * scale)}px system-ui, sans-serif`;
+          ctx.fillStyle = 'rgba(0,0,0,.82)'; ctx.fillRect(dx, dy, Math.min(renderedW, ctx.measureText(text).width + 8), 18 * scale);
+          ctx.fillStyle = '#fff'; ctx.fillText(text, dx + 4, dy + 13 * scale, Math.max(1, renderedW - 8));
+        }
+        const debugScale = (this.frame.debugPersonMasks[0]?.width ?? 128) / s;
         for (const person of this.frame.debugPersonMasks) {
           const layer = this.debugCanvases.get(person.id);
           if (layer) {
@@ -304,7 +348,9 @@ export class Overlay {
     this.faceLayerCanvas.width = this.faceLayerCanvas.height = 0;
     this.staticCanvas = undefined;
     this.faceCanvas = undefined;
+    this.faceCanvases = [];
     this.trackCanvases.clear();
     this.debugCanvases.clear();
+    this.bodyRegionCanvas = undefined;
   }
 }
