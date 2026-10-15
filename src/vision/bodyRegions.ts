@@ -3,6 +3,7 @@
 import { createOnnxSession, ort, type OnnxBackend } from './ortRuntime';
 import type { BodyRegionMode } from '../config/settings';
 import { decodeBodyRegions } from './bodyRegionMap';
+import type { RegionPerson, PelvisEstimate } from './pelvis';
 
 export class BodyPixRegionSegmenter {
   private session?: ort.InferenceSession;
@@ -16,6 +17,7 @@ export class BodyPixRegionSegmenter {
   private gpuInput?: ort.Tensor;
   private device?: GPUDevice;
   private lastTimings = { preprocess: 0, run: 0, decode: 0 };
+  private geometry: { pelvis: Array<PelvisEstimate | undefined> } = { pelvis: [] };
   constructor(readonly mode: Exclude<BodyRegionMode, 'off'>, private readonly preference: OnnxBackend = 'webgpu', private readonly threads?: number) {
     this.side = mode === 'faster' ? 257 : 321;
     this.grid = mode === 'faster' ? 17 : 41;
@@ -46,7 +48,7 @@ export class BodyPixRegionSegmenter {
     this.session = loaded.session;
     this.backend = loaded.backend;
   }
-  async segment(rgba: Uint8Array, side: number, semantic: Uint8Array): Promise<Uint8Array> {
+  async segment(rgba: Uint8Array, side: number, semantic: Uint8Array, people: readonly RegionPerson[] = []): Promise<Uint8Array> {
     if (!this.session || rgba.length !== side * side * 4 || semantic.length !== side * side) throw new Error('BodyPix input grid mismatch');
     const started = performance.now();
     if (this.source.width !== side) this.source.width = this.source.height = side;
@@ -61,12 +63,18 @@ export class BodyPixRegionSegmenter {
     const outputs = await this.session.run({ sub_2: this.gpuInput ?? new ort.Tensor('float32', this.input, [1, 3, this.side, this.side]) });
     try {
       const partTensor = outputs.float_part_heatmaps, foregroundTensor = outputs.float_segments;
+      const heatmapTensor = outputs.float_heatmaps, offsetTensor = outputs.float_short_offsets;
       if (!partTensor || !foregroundTensor || partTensor.dims.join(',') !== `1,24,${this.grid},${this.grid}` ||
-          foregroundTensor.dims.join(',') !== `1,1,${this.grid},${this.grid}`) throw new Error('BodyPix output contract mismatch');
-      const [parts, foreground] = await Promise.all([partTensor.getData(), foregroundTensor.getData()]);
-      if (!(parts instanceof Float32Array) || !(foreground instanceof Float32Array)) throw new Error('BodyPix output precision mismatch');
+          foregroundTensor.dims.join(',') !== `1,1,${this.grid},${this.grid}` ||
+          !heatmapTensor || !offsetTensor || heatmapTensor.dims.join(',') !== `1,17,${this.grid},${this.grid}` ||
+          offsetTensor.dims.join(',') !== `1,34,${this.grid},${this.grid}`) throw new Error('BodyPix output contract mismatch');
+      const [parts, foreground, heatmaps, offsets] = await Promise.all([partTensor.getData(), foregroundTensor.getData(),
+        heatmapTensor.getData(), offsetTensor.getData()]);
+      if (!(parts instanceof Float32Array) || !(foreground instanceof Float32Array) ||
+          !(heatmaps instanceof Float32Array) || !(offsets instanceof Float32Array)) throw new Error('BodyPix output precision mismatch');
       const decodeAt = performance.now();
-      const map = decodeBodyRegions(parts, foreground, this.grid, semantic, side);
+      const map = decodeBodyRegions(parts, foreground, this.grid, semantic, side, people,
+        { heatmaps, offsets, inputSide: this.side }, this.geometry);
       this.lastTimings = { preprocess: runAt - started, run: decodeAt - runAt, decode: performance.now() - decodeAt };
       return map;
     } finally { for (const tensor of Object.values(outputs)) tensor.dispose(); }
@@ -74,6 +82,7 @@ export class BodyPixRegionSegmenter {
   getBackend(): string { return this.backend; }
   getInputSize(): number { return this.side; }
   getLastTimings(): { preprocess: number; run: number; decode: number } { return this.lastTimings; }
+  getLastPelvisEstimates(): ReadonlyArray<PelvisEstimate | undefined> { return this.geometry.pelvis; }
   async dispose(): Promise<void> {
     try { await this.session?.release(); }
     finally { this.session = undefined; this.gpuInput = undefined; this.gpuBuffer?.destroy(); this.gpuBuffer = undefined; this.device = undefined; }

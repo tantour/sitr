@@ -17,7 +17,8 @@ export type WholeBodyEffect = 'black' | 'blur' | 'checkerboard';
 export type FaceEffect = 'show' | WholeBodyEffect;
 export type ImageDetectionGate = 'any' | 'face' | 'person' | 'either' | 'both';
 export type BodyRegionMode = 'off' | 'faster' | 'finer';
-export const BODY_REGIONS = ['torso', 'upper-arms', 'forearms', 'hands', 'thighs', 'lower-legs', 'feet', 'neck'] as const;
+// Append new regions to preserve existing numeric model/debug IDs.
+export const BODY_REGIONS = ['torso', 'upper-arms', 'forearms', 'hands', 'thighs', 'lower-legs', 'feet', 'neck', 'groin'] as const;
 export type BodyRegion = typeof BODY_REGIONS[number];
 export type SkinAction = 'show' | 'hide';
 export type PersonArea = BodyRegion | 'hair' | 'face' | 'body' | 'other-skin';
@@ -32,7 +33,7 @@ export interface PersonPolicy {
 export type PersonPolicies = Record<'female' | 'male', PersonPolicy>;
 
 export interface Settings {
-  schemaVersion: 19;
+  schemaVersion: 20;
   revision: number;
   enabled: boolean;
   images: boolean;
@@ -95,7 +96,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  schemaVersion: 19,
+  schemaVersion: 20,
   revision: 0,
   enabled: true,
   images: true,
@@ -193,14 +194,17 @@ export function siteIsExcepted(hostname: string, exceptions: string[]): boolean 
 export function normalizeSettings(value: unknown): Settings {
   const raw = (value && typeof value === 'object' ? value : {}) as Partial<Settings>;
   const merged = { ...DEFAULT_SETTINGS, ...raw };
-  merged.schemaVersion = 19;
+  merged.schemaVersion = 20;
   if (raw.personPolicies && typeof raw.personPolicies === 'object') {
     const policies = {} as PersonPolicies;
     for (const gender of ['female', 'male'] as const) {
       const value = raw.personPolicies[gender];
       const action = (input: unknown): SkinAction => input === 'show' ? 'show' : 'hide';
       const effect = (input: unknown): FaceEffect => ['show', 'black', 'blur', 'checkerboard'].includes(String(input)) ? input as FaceEffect : 'show';
-      policies[gender] = { skin: Object.fromEntries(BODY_REGIONS.map(area => [area, action(value?.skin?.[area])])) as PersonPolicy['skin'],
+      // The pelvis previously belonged to torso: inherit that saved action
+      // until the user chooses groin explicitly, including old Show-all policies.
+      policies[gender] = { skin: Object.fromEntries(BODY_REGIONS.map(area => [area, action(
+        area === 'groin' && value?.skin?.groin === undefined ? value?.skin?.torso : value?.skin?.[area])])) as PersonPolicy['skin'],
         otherSkin: action(value?.otherSkin), hair: action(value?.hair), face: effect(value?.face), video: effect(value?.video),
         ...(value?.faceStrength !== undefined && Number.isFinite(Number(value.faceStrength))
           ? { faceStrength: Math.max(8, Math.min(64, Math.round(Number(value.faceStrength)))) } : {}) };
@@ -210,7 +214,8 @@ export function normalizeSettings(value: unknown): Settings {
   if (!['off', 'faster', 'finer'].includes(merged.imageBodyRegionMode)) merged.imageBodyRegionMode = 'off';
   for (const field of ['imageFemaleAllowedRegions', 'imageMaleAllowedRegions'] as const) {
     const allowed = merged[field];
-    merged[field] = Array.isArray(allowed) ? BODY_REGIONS.filter(region => allowed.includes(region)) : [];
+    merged[field] = Array.isArray(allowed) ? BODY_REGIONS.filter(region => allowed.includes(region) ||
+      region === 'groin' && (raw.schemaVersion ?? 0) < 20 && allowed.includes('torso')) : [];
   }
   // Removed exposure rules must not survive invisibly in saved profiles.
   merged.imageSkinThresholdEnabled = false;

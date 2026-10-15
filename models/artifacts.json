@@ -106,15 +106,15 @@
     },
     {
       "name": "bodypix-mobilenet075-stride16-257.onnx",
-      "sha256": "7535a67f88e685c63f33b895885ff4de99f24bcb207321a929b71c22b8adc76c",
-      "source": "Official Google BodyPix MobileNet 0.75 quant2, stride 16, dense foreground/24-part heads converted to FP32 ONNX by scripts/export-bodypix.py",
+      "sha256": "5ee1aa1929620ebf1704545d6f6ac803e329fd12990eceb4f7fd3e5a9907ba46",
+      "source": "Official Google BodyPix MobileNet 0.75 quant2, stride 16, dense foreground/24-part and pose/short-offset heads converted to FP32 ONNX by scripts/export-bodypix.py",
       "license": "Apache-2.0",
       "licenseFile": "LICENSES/Apache-2.0.txt"
     },
     {
       "name": "bodypix-mobilenet075-stride8-321.onnx",
-      "sha256": "7715bd6eae71776721ee2c68c2b7c9130ff5f1de5d064865af870862e8b4a2cb",
-      "source": "Official Google BodyPix MobileNet 0.75 quant2, stride 8, dense foreground/24-part heads converted to FP32 ONNX by scripts/export-bodypix.py",
+      "sha256": "d19799d8a8da70a1b8be6cded5bfab950e675991ecbf36509f582c25b386ba7c",
+      "source": "Official Google BodyPix MobileNet 0.75 quant2, stride 8, dense foreground/24-part and pose/short-offset heads converted to FP32 ONNX by scripts/export-bodypix.py",
       "license": "Apache-2.0",
       "licenseFile": "LICENSES/Apache-2.0.txt"
     }

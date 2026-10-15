@@ -67,7 +67,7 @@ export async function renderBackground(blob: Blob, result: AnalysisResult): Prom
       const regions = document.createElement('canvas'); regions.width = width; regions.height = height;
       const pixels = new Uint8ClampedArray(width * height * 4);
       // Same palette as the regular-image overlay.
-      const colors = [[0, 0, 0], [240, 55, 65], [60, 140, 255], [155, 90, 235], [245, 210, 60], [225, 65, 190], [45, 195, 95], [45, 205, 215], [235, 155, 45]];
+      const colors = [[0, 0, 0], [240, 55, 65], [60, 140, 255], [155, 90, 235], [245, 210, 60], [225, 65, 190], [45, 195, 95], [45, 205, 215], [235, 155, 45], [255, 125, 100]];
       for (let p = 0; p < labels.length; p++) if (labels[p] > 0 && labels[p] < colors.length)
         pixels.set([...colors[labels[p]], 105], p * 4);
       regions.getContext('2d')!.putImageData(new ImageData(pixels, width, height), 0, 0);

@@ -34,13 +34,22 @@ document, and handles image acquisition under HTTP(S) host permissions.
 frame/document ownership, enforces analysis timeouts, and retries failed engines
 with fallback backends. `src/workers/index.ts` runs models and builds results.
 
+The background starts the offscreen document before a page requests analysis.
+The host reads saved ONNX thread settings and waits for the worker's `warmed`
+acknowledgement before dispatching queued work. Preparation runs twice on neutral
+synthetic pixels through all three YOLO sizes, fast boxes, semantic input sizes,
+all three YuNet sizes, FastFace, both body appearance classifiers, and both BodyPix
+variants. Model sessions are retained across settings and page changes; only
+failed sessions or an engine restart discard them. A restart repeats preparation.
+The 64 MiB frame cache budget is separate from resident model memory.
+
 YOLO WebGPU graphs retain FP32 weights and move TopK selection to TypeScript.
 Original ONNX graphs are packaged for WASM fallback. MediaPipe runs for still
 images; video avoids that stage. YuNet and FastFace use WASM. Optional Intel and
 Paddle models classify person crops. The rules choose selected/unclassified
 people, per-gender area policies, and face effects. Optional BodyPix maps label
-only MediaPipe body-skin pixels; neither pose geometry nor a video anatomy stage
-is used. Expansion clips against shown regions, and fully shown people suppress
+only MediaPipe body-skin pixels. Original pose heads anchor groin and upper-thigh
+geometry; video skips anatomy inference. Expansion clips against shown regions, and fully shown people suppress
 semantic border masks. Face layers carry each gender's effect and strength. Removed
 skin-exposure rules are disabled during normalization. Tracking uses
 temporary continuity evidence and resets on scene changes.

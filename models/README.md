@@ -2,15 +2,21 @@
 
 ## Install the release bundle (recommended)
 
-Download `sitr-0.5.0-models.zip` and `SHA256SUMS.txt` from the
-[matching release](https://github.com/tantour/sitr/releases/tag/v0.5.0). This
-source requires fifteen pinned models, including the two optional BodyPix
-variants. The 0.4.2 bundle contains thirteen and cannot build 0.5.0.
+Download `sitr-0.5.1-models.zip` and `SHA256SUMS.txt` from the
+[matching release](https://github.com/tantour/sitr/releases/tag/v0.5.1). This
+source requires fifteen pinned models, including both optional BodyPix variants.
+
+**Use the matching 0.5.1 bundle.** Both BodyPix exports restore original pose and
+short-offset heads for groin and upper-thigh geometry, changing their hashes.
+The 0.5.0 bundle contains dense-only graphs and cannot satisfy these pins; the
+0.4.2 bundle also lacks the anatomy models. Original source inputs and hashes
+remain in the bundle for reproducible exports.
+
 Use Node.js 22.12+:
 
 ```sh
 npm ci
-npm run models -- --archive /path/to/sitr-0.5.0-models.zip
+npm run models -- --archive /path/to/sitr-0.5.1-models.zip
 npm run models
 npm run build
 ```
@@ -33,19 +39,30 @@ bundle's required files.
 `scripts/export-bodypix.py` uses three pinned `bodypix075-*` source files
 installed under `models/sources/` by `npm run models -- --sources`. With ONNX
 1.23.0 and NumPy it translates official Google MobileNet 0.75 quant2 graphs
-to FP32 ONNX, retaining foreground/24-part logits and dropping pose/offset
-heads. It verifies source hashes; no retraining or pose geometry is added.
+to FP32 ONNX, retaining foreground/24-part logits and the original 17-keypoint
+heatmaps/34-channel short offsets. Unused long/part offsets are dropped. It
+verifies source hashes; no retraining or separate pose model is added. Hips,
+shoulders and knees anchor the independent groin and upper-thigh regions.
 
 - `bodypix-mobilenet075-stride16-257.onnx`: **Fast**, 257×257 input, 17×17 logits.
 - `bodypix-mobilenet075-stride8-321.onnx`: **Quality**, slower with finer detail, 321×321 input,
   41×41 logits.
 
-Each model is about 4.92 MB and reuses ONNX Runtime Web with captured WebGPU
+Each model is about 5.00 MB and reuses ONNX Runtime Web with captured WebGPU
 and WASM fallback. TensorFlow.js is not shipped. Original and converted outputs
 were compared on photograph/noise tensors, with maximum logit differences
 below 0.000026 in local research. Weights/code are Apache-2.0; attribution and
 license are packaged. Parts can still be misclassified, especially overlaps.
 Both variants are off by default and image-only.
+
+The restored heads add about 79 KB per variant and reuse the same backbone in
+the same inference call. `python scripts/validate-bodypix.py` checks every pose/
+offset channel against the pinned original source kernels on clothed photographs
+and noise. `--previous-dir PATH` additionally compares dense outputs with the
+previous exports (files must have the same basenames). Locally, dense outputs
+were identical and pose-head errors were below 0.000020. Localization and skin
+classification can still be wrong; numerical parity does not establish anatomy
+accuracy. `node scripts/groin-probe.mjs` probes modest male photographs after build.
 
 ## Rebuild from upstream inputs
 

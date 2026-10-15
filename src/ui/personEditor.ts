@@ -4,7 +4,7 @@ import { BODY_REGIONS, type FaceEffect, type PersonArea, type Settings } from '.
 import { editablePolicies, faceStrength, genderPolicy, groupedBodySkin, uniformPolicy } from '../config/personPolicy';
 import { number, t } from './localization';
 
-export const AREA_NAMES: Record<PersonArea, string> = { body: 'Body skin', hair: 'Hair', face: 'Face', neck: 'Neck', torso: 'Torso (chest and belly)',
+export const AREA_NAMES: Record<PersonArea, string> = { body: 'Body skin', hair: 'Hair', face: 'Face', neck: 'Neck', torso: 'Torso (chest and belly)', groin: 'Groin (pelvis)',
   'upper-arms': 'Upper arms', forearms: 'Forearms', hands: 'Hands', thighs: 'Thighs', 'lower-legs': 'Lower legs', feet: 'Feet', 'other-skin': 'Unrecognized skin' };
 const ACTION_NAMES = { show: 'Show', hide: 'Hide', black: 'Black', blur: 'Blur', checkerboard: 'Pixelate' };
 
@@ -64,6 +64,7 @@ export function initializePersonEditor(getSettings: () => Settings,
       : area === 'hair' ? 'This choice covers hair only, independently of skin.'
       : area === 'other-skin' ? 'Skin the body model cannot recognize uses this choice.'
       : area === 'neck' ? 'Neck boundaries are approximate and can be imperfect.'
+      : area === 'groin' ? 'Only exposed skin is affected. The pelvis boundary is estimated from torso and legs.'
       : 'Only exposed skin in this area is affected. Clothes stay visible.');
     model.value = getSettings().imageBodyRegionMode;
     for (const action of ['show', 'hide']) document.getElementById(action === 'show' ? 'showAllAreas' : 'hideAllAreas')!.setAttribute('aria-pressed', String(!enabled && value('body') === action));

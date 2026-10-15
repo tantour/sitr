@@ -7,16 +7,16 @@
    files or undocumented third-party assets are included in the source changes.
 3. Run `npx playwright install chromium` and `npm audit`. Resolve reported
    advisories before publishing. Run `npm run release`; it stops on failed checks.
-4. Review `release/v0.5.0/sitr-0.5.0-chrome.zip`, `sitr-0.5.0-source.zip`,
-   `sitr-0.5.0-models.zip`, and `SHA256SUMS.txt`. Load the extracted extension into
+4. Review `release/v0.5.1/sitr-0.5.1-chrome.zip`, `sitr-0.5.1-source.zip`,
+   `sitr-0.5.1-models.zip`, and `SHA256SUMS.txt`. Load the extracted extension into
    ordinary Chrome and check your intended websites. Unit and headless checks
    do not establish accuracy or sustained real-site compatibility.
 5. When you are ready to publish, review and commit the source and documentation,
    then push to [tantour/sitr](https://github.com/tantour/sitr). Local preparation
    does not commit, create tags, push, or publish.
 6. Enable private vulnerability reporting in the repository settings. Create a
-   release tagged `v0.5.0`, attach all three ZIPs and the checksum file, and use
-   [the prepared 0.5.0 release notes](RELEASE-NOTES-0.5.0.md). State the Chrome minimum and coverage limits.
+   release tagged `v0.5.1`, attach all three ZIPs and the checksum file, and use
+   [the prepared 0.5.1 release notes](RELEASE-NOTES-0.5.1.md). State the Chrome minimum and coverage limits.
 
 The three archives must come from the same source/build run. If code changes
 after packaging, regenerate them. The source ZIP includes new, non-ignored files
@@ -32,12 +32,12 @@ Original upstream inputs and export scripts are available through the source
 archive and pinned manifest. Keep matching source/model assets available for each
 binary release, as described in SOURCE.md and the GNU AGPL.
 
-### Manual publication of 0.5.0
+### Manual publication of 0.5.1
 
-The local archives are under `release/v0.5.0/`; versioned directories preserve
+The local archives are under `release/v0.5.1/`; versioned directories preserve
 earlier archives and their checksums. Review the source changes before you
 commit and push them yourself. Then open the repository's Releases page, create
-a release for tag `v0.5.0` at that exact source commit, paste the prepared release
+a release for tag `v0.5.1` at that exact source commit, paste the prepared release
 notes, and upload the Chrome, source, and model ZIPs plus `SHA256SUMS.txt`.
 The local build/package scripts never create commits, tags, or GitHub releases.
 
@@ -49,7 +49,8 @@ URL and its SHA-256. It installs verified models, builds, runs browser tests, an
 uploads all four release files as a GitHub Actions artifact. It does not publish
 a release or push source automatically. Download and review the artifact before
 creating the public release. Use a bundle matching the source revision; the old v0.4.2 model bundle cannot
-build v0.5.0 because it lacks the optional segmentation models.
+build v0.5.1 because it lacks the optional segmentation models. The 0.5.0 bundle
+also cannot build 0.5.1 because its BodyPix graphs have different output heads and hashes.
 
 ## Future versions
 

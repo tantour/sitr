@@ -16,6 +16,11 @@
         <select id="uiLanguage" aria-label="Language" title="Language"><option value="en" lang="en">English</option><option value="ar" lang="ar">العربية</option></select>
       </div>
     </header>
+    <div id="engineStatus" class="engine-status" data-state="preparing">
+      <div class="engine-status-row"><span id="engineStatusTitle" role="status" aria-live="polite">Preparing protection…</span><button id="retryPreparation" type="button" hidden>Retry</button></div>
+      <p id="engineStatusDetail">Starting up…</p>
+      <progress id="engineProgress" aria-label="Preparation progress"></progress>
+    </div>
     <div class="workspace">
       <nav class="settings-nav settings-only" aria-label="Settings sections">
         <button type="button" data-section="coverage" aria-current="page">Coverage</button>
@@ -67,18 +72,19 @@
                       <g data-person-area="face" role="button" tabindex="0"><path d="M82 35Q99 22 118 34L117 52Q112 71 100 72Q86 71 81 52Z"/></g>
                       <g data-person-area="body" role="button" tabindex="0"><path d="M90 71L110 71L114 85L135 92Q150 95 154 111L181 213L187 235Q185 252 174 249L167 235L169 220L135 126L126 165L138 186L139 240L136 359L153 377L152 384Q133 387 120 378L121 359L111 280L104 242L100 215L96 242L89 280L79 359L80 378Q67 387 48 384L47 377L64 359L61 240L62 186L74 165L65 126L31 220L33 235L26 249Q15 252 13 235L19 213L46 111Q50 95 65 92L86 85Z"/></g>
                       <g data-person-area="neck" role="button" tabindex="0"><path d="M90 71L110 71L114 85Q100 95 86 85Z"/></g>
-                      <g data-person-area="torso" role="button" tabindex="0"><path d="M83 86Q100 97 117 86L133 94L132 137L126 164L136 183Q100 196 64 183L74 164L68 137L67 94Z"/></g>
+                      <g data-person-area="torso" role="button" tabindex="0"><path d="M83 86Q100 97 117 86L133 94L132 137L126 164Q100 176 74 164L68 137L67 94Z"/></g>
+                      <g data-person-area="groin" role="button" tabindex="0"><path d="M75 168Q100 180 125 168L132 185L112 201L100 219L88 201L68 185Z"/></g>
                       <g data-person-area="upper-arms" role="button" tabindex="0"><path d="M65 92Q50 95 46 111L32 158L49 165L66 121Z"/><path d="M135 92Q150 95 154 111L168 158L151 165L134 121Z"/></g>
                       <g data-person-area="forearms" role="button" tabindex="0"><path d="M31 161L48 168L34 218L19 213Z"/><path d="M169 161L152 168L166 218L181 213Z"/></g>
                       <g data-person-area="hands" role="button" tabindex="0"><path d="M18 217L33 221L31 242Q26 254 16 246L13 235Z"/><path d="M182 217L167 221L169 242Q174 254 184 246L187 235Z"/></g>
-                      <g data-person-area="thighs" role="button" tabindex="0"><path d="M64 187Q81 193 98 195L96 242L89 280L65 280L61 240Z"/><path d="M136 187Q119 193 102 195L104 242L111 280L135 280L139 240Z"/></g>
+                      <g data-person-area="thighs" role="button" tabindex="0"><path d="M64 187L85 204L97 222L96 242L89 280L65 280L61 240Z"/><path d="M136 187L115 204L103 222L104 242L111 280L135 280L139 240Z"/></g>
                       <g data-person-area="lower-legs" role="button" tabindex="0"><path d="M65 284L89 284L86 323L79 359L64 359L60 319Z"/><path d="M135 284L111 284L114 323L121 359L136 359L140 319Z"/></g>
                       <g data-person-area="feet" role="button" tabindex="0"><path d="M64 363L80 363L80 378Q67 387 48 384L47 377Z"/><path d="M136 363L120 363L120 378Q133 387 152 384L153 377Z"/></g>
                     </svg>
                     <div class="person-area-controls">
                       <label for="personAreaSelect" class="area-picker-label">Choose area</label>
                       <select id="personAreaSelect" aria-label="Choose area">
-                        <option value="face">Face</option><option value="hair">Hair</option><option value="body">Body skin</option><option value="neck">Neck</option><option value="torso">Torso (chest and belly)</option><option value="upper-arms">Upper arms</option><option value="forearms">Forearms</option><option value="hands">Hands</option><option value="thighs">Thighs</option><option value="lower-legs">Lower legs</option><option value="feet">Feet</option><option value="other-skin">Unrecognized skin</option>
+                        <option value="face">Face</option><option value="hair">Hair</option><option value="body">Body skin</option><option value="neck">Neck</option><option value="torso">Torso (chest and belly)</option><option value="groin">Groin (pelvis)</option><option value="upper-arms">Upper arms</option><option value="forearms">Forearms</option><option value="hands">Hands</option><option value="thighs">Thighs</option><option value="lower-legs">Lower legs</option><option value="feet">Feet</option><option value="other-skin">Unrecognized skin</option>
                       </select>
                       <h3 id="personAreaTitle">Face</h3><p id="personCurrentAction" class="current-area-action"></p>
                       <div class="area-actions" role="group" aria-label="Area action">
@@ -160,7 +166,7 @@
 <section class="settings-panel settings-only" data-settings-panel="diagnostics" hidden><h2>Diagnostics</h2><div class="tech-body">
   <label id="faceAssociationModeControl">Face/person matching <select id="faceAssociationMode"><option value="overlap">Overlap score (stricter)</option><option value="center">Face-box center point</option></select></label>
   <label><input id="debugOverlay" type="checkbox"> Show AI debug outlines, face boxes, and gender estimates</label>
-  <p class="muted">Advanced segmentation colors: torso red, upper arms blue, forearms purple, hands yellow, thighs pink, lower legs green, feet cyan, neck orange. Unrecognized skin follows its saved choice.</p>
+  <p class="muted">Advanced segmentation colors: torso red, groin coral, upper arms blue, forearms purple, hands yellow, thighs pink, lower legs green, feet cyan, neck orange. Unrecognized skin follows its saved choice.</p>
   <label><input id="faceAssociation" type="checkbox"> Face association diagnostics</label>
   <details>
     <summary>Advanced AI thresholds</summary>

@@ -56,6 +56,8 @@ export interface BodyRegionDiagnostics {
   backend?: string;
   inputSize?: number;
   stride?: number;
+  groinEstimatedPeople?: number;
+  groinSkippedPeople?: number;
   skinPixels: number;
   unknownSkinPixels: number;
   allowedSkinPixels: number;
@@ -116,15 +118,21 @@ export interface AnalysisResult {
     yoloSize?: number; yunetSize?: number; faceCaptureSize?: number;
     onnxThreads?: number; semanticParallel?: boolean; isolated: boolean };
 }
+export type WarmupProgress = { completed: number; total: number };
+export type EngineStatus = { ok: boolean; ready: boolean; error?: string;
+  progress?: WarmupProgress & { elapsedMs: number }; warmup?: { failures: Record<string, string> } };
 export type WorkerInput =
   | { type: 'backend'; semantic: 'auto' | 'cpu'; onnx: 'wasm' | 'webgpu'; threads?: number; parallelSemantic: boolean }
   | { type: 'warm'; size: number; kind: 'image' | 'video'; detector: 'segment' | 'fast-box'; semantic: boolean; faces: boolean; gender: boolean }
+  | { type: 'warm-all' }
   | { type: 'analyze'; frame: FramePacket; settings: Settings }
   | { type: 'reuse-image'; key: FrameKey; fromKey: FrameKey; settings: Settings }
   | { type: 'settings'; key: FrameKey; settings: Settings }
   | { type: 'label'; key: FrameKey; trackId: string; label: Label; settings: Settings }
   | { type: 'reset'; mediaSessionId: string; epoch: number };
 export type WorkerOutput =
+  | { type: 'warm-progress'; progress: WarmupProgress }
   | { type: 'result'; result: AnalysisResult }
   | { type: 'error'; key?: FrameKey; message: string; stage?: 'semantic' }
+  | { type: 'warmed'; models: string[]; failures: Record<string, string>; elapsedMs: number }
   | { type: 'ready' };

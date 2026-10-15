@@ -92,7 +92,7 @@ describe('threshold settings', () => {
   });
   it('migrates older settings with both new features off and the example defaults', () => {
     const settings = normalizeSettings({ schemaVersion: 15 });
-    expect(settings.schemaVersion).toBe(19);
+    expect(settings.schemaVersion).toBe(20);
     expect([settings.imageSkinThresholdEnabled, settings.imageGroupSkinThresholdEnabled]).toEqual([false, false]);
     expect([settings.imageSkinThresholdPercent, settings.imageGroupSkinThresholdPercent, settings.imageGroupSkinPeopleLimit]).toEqual([80, 70, 3]);
   });

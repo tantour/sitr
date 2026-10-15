@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Sitr contributors
 import { ENGINE, resolveOnnxThreads, type Settings, type Label } from '../config/settings';
-import type { FrameKey, FramePacket, WorkerInput, WorkerOutput } from '../state/contracts';
+import type { FrameKey, FramePacket, WorkerInput, WorkerOutput, WarmupProgress } from '../state/contracts';
 
 let worker: Worker | undefined;
 let workerReady = false;
@@ -10,6 +10,10 @@ let forceCpuSemantic = false;
 let onnxBackend: 'wasm' | 'webgpu' = 'webgpu';
 let onnxThreads = resolveOnnxThreads('auto', navigator.hardwareConcurrency);
 let parallelSemantic = false;
+let warmupTimeout: number | undefined;
+let warmupReport: Extract<WorkerOutput, { type: 'warmed' }> | undefined;
+let warmupProgress: WarmupProgress | undefined;
+let warmupStartedAt = 0;
 const completedSizes = new Set<number>();
 let busy = false;
 let activeReply: ((value: unknown) => void) | undefined;
@@ -23,7 +27,6 @@ let queued = new Map<string, Job>();
 const owners = new Map<string, { tabId: number; frameId: number; documentId?: string; epoch: number }>();
 let restarts: number[] = [];
 let restartTimer: number | undefined;
-let pendingWarm: { size: number; kind: 'image' | 'video'; detector: 'segment' | 'fast-box'; semantic: boolean; faces: boolean; gender: boolean } | undefined;
 
 type Request =
   | { type: 'analyze'; frame: FramePacket; settings: Settings }
@@ -52,10 +55,6 @@ function failActive(message: string): void {
   scheduleNext();
 }
 function scheduleNext(): void {
-  if (!busy && workerReady && worker && queued.size === 0 && pendingWarm) {
-    worker.postMessage({ type: 'warm', ...pendingWarm } satisfies WorkerInput);
-    pendingWarm = undefined;
-  }
   if (busy || !workerReady || !worker || queued.size === 0) return;
   const jobs = [...queued.values()].sort((a, b) => {
     const priority = (job: Job) => job.request.type !== 'analyze' ? 3
@@ -105,6 +104,8 @@ function run(job: Job): void {
   }, job.request.type === 'analyze' && !completedSizes.has(job.request.frame.width) ? 45000 : 8000);
 }
 function restartEngine(reason: string, semanticFailure = false): void {
+  if (warmupTimeout !== undefined) clearTimeout(warmupTimeout);
+  warmupTimeout = undefined;
   worker?.terminate(); worker = undefined; workerReady = false;
   workerFailure = reason;
   if (semanticFailure) forceCpuSemantic = true;
@@ -139,16 +140,33 @@ function queue(job: Job): void {
   queued.set(job.key.mediaSessionId, job);
 }
 function startWorker(): void {
+  if (warmupTimeout !== undefined) clearTimeout(warmupTimeout);
+  warmupReport = undefined;
+  warmupProgress = undefined;
+  warmupStartedAt = Date.now();
   worker?.terminate();
   completedSizes.clear();
   workerReady = false;
   workerFailure = '';
   worker = new Worker(chrome.runtime.getURL('worker.js'));
+  const instance = worker;
+  warmupTimeout = self.setTimeout(() => restartEngine('Model preparation timed out'), 180000);
   worker.onmessage = (event: MessageEvent<WorkerOutput>) => {
+    if (worker !== instance) return;
     const output = event.data;
+    if (output.type === 'warm-progress') { warmupProgress = output.progress; return; }
     if (output.type === 'ready') {
       worker?.postMessage({ type: 'backend', semantic: forceCpuSemantic ? 'cpu' : 'auto', onnx: onnxBackend,
         threads: onnxThreads, parallelSemantic } satisfies WorkerInput);
+      worker?.postMessage({ type: 'warm-all' } satisfies WorkerInput);
+      return;
+    }
+    if (output.type === 'warmed') {
+      if (warmupTimeout !== undefined) clearTimeout(warmupTimeout);
+      warmupTimeout = undefined;
+      warmupReport = output;
+      const requiredFailure = Object.keys(output.failures).find(name => name.startsWith('segment:') || name.startsWith('fast:') || name.startsWith('semantic:'));
+      if (requiredFailure) { restartEngine(output.failures[requiredFailure], requiredFailure.startsWith('semantic:')); return; }
       workerReady = true; workerFailure = ''; scheduleNext(); return;
     }
     if (output.type === 'result' && matchingResult(activeKey, output.result.key)) {
@@ -169,14 +187,23 @@ function startWorker(): void {
     }
   };
   worker.onerror = event => {
+    if (worker !== instance) return;
     restartEngine(`${event.message || 'Vision worker crashed'} at ${event.lineno}:${event.colno}`);
   };
-  worker.onmessageerror = () => restartEngine('Vision worker message error');
+  worker.onmessageerror = () => { if (worker === instance) restartEngine('Vision worker message error'); };
 }
-startWorker();
+// Read the persisted thread count before creating any ONNX sessions.
+void chrome.runtime.sendMessage({ type: 'get-settings' }).then((settings: Settings | undefined) => {
+  onnxThreads = resolveOnnxThreads(settings?.onnxThreads ?? 'auto', navigator.hardwareConcurrency);
+}).catch(() => {}).finally(() => { if (!worker) startWorker(); });
 
 chrome.runtime.onMessage.addListener((request: Request, sender, reply) => {
-  if ((request as { type?: string })?.type === 'retry-engine' && sender.id === chrome.runtime.id && !sender.tab) {
+  const internal = sender.id === chrome.runtime.id && (!sender.tab || sender.url?.startsWith(chrome.runtime.getURL('popup.html')));
+  if ((request as { type?: string })?.type === 'engine-status' && internal) {
+    reply({ ok: true, ready: workerReady, error: workerFailure, warmup: warmupReport,
+      progress: warmupProgress && { ...warmupProgress, elapsedMs: warmupReport?.elapsedMs ?? Date.now() - warmupStartedAt } }); return false;
+  }
+  if ((request as { type?: string })?.type === 'retry-engine' && internal) {
     const requestedBackend = (request as { backend?: string }).backend;
     if (requestedBackend === 'cpu') forceCpuSemantic = true;
     else if (requestedBackend === 'auto') forceCpuSemantic = false;
@@ -208,8 +235,6 @@ chrome.runtime.onMessage.addListener((request: Request, sender, reply) => {
       failActive('backend-retry');
       startWorker();
     }
-    pendingWarm = { size: request.size, kind: request.kind, detector: request.detector,
-      semantic: request.semantic, faces: request.faces, gender: request.gender };
     scheduleNext();
     reply({ ok: true }); return false;
   }

@@ -5,12 +5,14 @@ import { readFile, writeFile, mkdir, access } from 'node:fs/promises';
 import { resolve, dirname, sep } from 'node:path';
 import { unzipSync } from 'fflate';
 import { root, sha256, installArchive, verifyModels } from './models.mjs';
-const directory = resolve(root, '.cache/release-validation');
+const version = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')).version;
+const output = resolve(root, 'release', `v${version}`);
+const directory = resolve(root, '.cache/release-validation', `v${version}`);
 await mkdir(directory, { recursive: true });
-const lines = (await readFile(resolve(root, 'release/SHA256SUMS.txt'), 'utf8')).trim().split('\n');
+const lines = (await readFile(resolve(output, 'SHA256SUMS.txt'), 'utf8')).trim().split('\n');
 for (const line of lines) {
   const [hash, name] = line.split(/\s+/);
-  const bytes = await readFile(resolve(root, 'release', name));
+  const bytes = await readFile(resolve(output, name));
   assert.equal(sha256(bytes), hash, `Archive checksum mismatch: ${name}`);
   if (name.endsWith('-models.zip')) {
     await installArchive(bytes, resolve(directory, 'installed-models'));
@@ -22,10 +24,20 @@ for (const line of lines) {
     assert(!Object.keys(files).some(name => /lena\.jpg$/.test(name)));
     if (name.endsWith('-chrome.zip')) {
       assert(files['manifest.json'] && files['LICENSE'] && files['NOTICE.md']);
+      assert.equal(JSON.parse(new TextDecoder().decode(files['manifest.json'])).version, version);
+      for (const [entry, content] of Object.entries(files)) {
+        if (entry.endsWith('/')) continue;
+        assert.equal(sha256(content), sha256(await readFile(resolve(root, 'dist', entry))), `Packaged file differs from build: ${entry}`);
+      }
       assert(!Object.keys(files).some(name => /\.(pt|tar|bin|pdmodel|pdiparams)$/.test(name)));
       console.log('PASS: extension ZIP resources and distribution boundaries.');
     } else {
       assert(files['package-lock.json'] && files['src/content/index.ts'] && files['scripts/build.mjs']);
+      assert.equal(JSON.parse(new TextDecoder().decode(files['package.json'])).version, version);
+      for (const [entry, content] of Object.entries(files)) {
+        if (entry.endsWith('/')) continue;
+        assert.equal(sha256(content), sha256(await readFile(resolve(root, entry))), `Packaged source differs from workspace: ${entry}`);
+      }
       const source = resolve(directory, 'source');
       await mkdir(source, { recursive: true });
       for (const [entry, content] of Object.entries(files)) {

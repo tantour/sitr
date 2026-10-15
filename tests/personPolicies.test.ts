@@ -99,7 +99,7 @@ describe('diagram policies and expansion', () => {
   });
   it('migrates old all-area exemptions into shown hair and neck, with independent copies', () => {
     const current = { ...DEFAULT_SETTINGS, filter: 'both' as const, imageBodyRegionMode: 'finer' as const,
-      imageMaleAllowedRegions: ['torso', 'upper-arms', 'forearms', 'hands', 'thighs', 'lower-legs', 'feet'] as Settings['imageMaleAllowedRegions'] };
+      imageMaleAllowedRegions: ['torso', 'upper-arms', 'forearms', 'hands', 'thighs', 'lower-legs', 'feet', 'groin'] as Settings['imageMaleAllowedRegions'] };
     expect(genderPolicy(current, 'male').hair).toBe('show'); expect(genderPolicy(current, 'male').skin.neck).toBe('show');
     const edited = editablePolicies(current); edited.male.skin.torso = 'hide'; expect(genderPolicy(current, 'male').skin.torso).toBe('show');
   });

@@ -52,6 +52,7 @@ async function open({ patch = {}, hash = '', viewport = { width: 440, height: 60
         getURL: path => `${origin}/${path}`,
         sendMessage: async message => {
           window.mock.messages.push(message);
+          if (message.type === 'engine-status') return window.mock.engineStatus ?? { ok: true, ready: true, warmup: { failures: {} } };
           if (message.type === 'get-settings') {
             if (window.mock.failLoad) throw new Error('Load failed');
             return window.mock.settings;
@@ -101,6 +102,35 @@ async function noOverflow(page, scrolling = false) {
 
 try {
   const popup = await open();
+  await popup.locator('#engineStatus[data-state=ready]').waitFor();
+  assert.equal(await popup.locator('#engineProgress').isVisible(), false);
+  await popup.evaluate(() => { window.mock.engineStatus = { ok: true, ready: false, progress: { completed: 6, total: 15, elapsedMs: 8200 } }; });
+  await popup.locator('#engineStatus[data-state=preparing]').waitFor();
+  assert.equal(await popup.locator('#engineStatusDetail').textContent(), '6 of 15 steps · 8 s');
+  assert.equal(await popup.locator('#engineProgress').evaluate(node => node.value), 6);
+  await popup.screenshot({ path: resolve(review, 'startup-progress-en.png'), animations: 'disabled' });
+  await popup.evaluate(() => { window.mock.engineStatus = { ok: true, ready: false, error: 'Engine unavailable after two restarts' }; });
+  await popup.locator('#engineStatus[data-state=error]').waitFor();
+  assert.equal(await popup.locator('#retryPreparation').isVisible(), true);
+  await popup.locator('#retryPreparation').click();
+  assert(await popup.evaluate(() => window.mock.messages.some(message => message.type === 'retry-engine')));
+  await popup.evaluate(() => { window.mock.engineStatus = { ok: true, ready: true, warmup: { failures: { face: 'missing' } } }; });
+  await popup.locator('#engineStatus[data-state=limited]').waitFor();
+  assert.equal(await popup.locator('#engineStatusTitle').textContent(), 'Ready with limited features');
+  await popup.evaluate(() => { window.mock.engineStatus = { ok: true, ready: true, warmup: { failures: {} } }; });
+  await popup.locator('#engineStatus[data-state=ready]').waitFor();
+  await popup.locator('#images').uncheck(); await saved(popup, 'images', false);
+  await popup.locator('#images').check(); await saved(popup, 'images', true);
+  await popup.locator('#saveStatus').filter({ hasText: 'Saved automatically' }).waitFor();
+  await popup.screenshot({ path: resolve(review, 'startup-ready-en.png'), animations: 'disabled' });
+  const startupArabic = await open({ preferences: { language: 'ar', theme: 'dark' } });
+  await startupArabic.evaluate(() => { window.mock.engineStatus = { ok: true, ready: false, progress: { completed: 6, total: 15, elapsedMs: 8200 } }; });
+  await startupArabic.locator('#engineStatus[data-state=preparing]').waitFor();
+  await startupArabic.waitForFunction(() => document.getElementById('engineStatusDetail').textContent.includes('٦'));
+  assert.equal(await startupArabic.locator('#engineStatusTitle').textContent(), 'جارٍ تجهيز الحماية…');
+  await noOverflow(startupArabic, true);
+  await startupArabic.screenshot({ path: resolve(review, 'startup-progress-ar-dark.png'), animations: 'disabled' });
+  await startupArabic.close();
   await noOverflow(popup, true);
   assert.equal(await popup.locator('#filter,#bodySkin,#hair,#imageRegionFaceEffect').count(), 0, 'No global gender/skin/hair/face selectors');
   assert.equal(await popup.locator('[data-person-area=body]').isVisible(),true);
@@ -141,6 +171,16 @@ try {
   assert.deepEqual(await popup.evaluate(() => {
     const p = window.mock.settings.personPolicies.male; return [p.hair, p.face, p.skin.neck, p.skin.torso, p.otherSkin];
   }), ['show','show','show','show','show']);
+  await popup.locator('[data-person-area=groin]').focus(); await popup.keyboard.press('Enter');
+  await popup.locator('[data-person-action=hide]').click();
+  await popup.waitForFunction(() => window.mock.settings.personPolicies.male.skin.groin === 'hide');
+  assert.equal(await popup.evaluate(() => window.mock.settings.personPolicies.male.skin.torso), 'show');
+  await popup.locator('#personEditor').scrollIntoViewIfNeeded();
+  await popup.screenshot({ path: resolve(review, 'person-editor-groin.png'), animations: 'disabled' });
+  await popup.locator('#personAreaSelect').selectOption('groin');
+  await popup.locator('[data-person-action=show]').click();
+  await popup.waitForFunction(() => window.mock.settings.personPolicies.male.skin.groin === 'show');
+  await popup.locator('#personAreaSelect').selectOption('thighs');
   await popup.evaluate(() => document.querySelector('main').scrollTop = 0);
   await popup.screenshot({ path: resolve(review,'person-editor-controls.png'), animations:'disabled' });
   await popup.locator('#personEditor').scrollIntoViewIfNeeded();
@@ -258,13 +298,15 @@ try {
     await ui.locator('#malePolicyTab').click(); await ui.locator('#showAllAreas').click();
     await ui.locator('#personAreaSelect').selectOption('thighs'); await ui.locator('[data-person-action=hide]').click();
     await ui.waitForFunction(async () => (await chrome.storage.local.get('settings')).settings.personPolicies.male.skin.thighs === 'hide');
+    await ui.locator('#personAreaSelect').selectOption('groin'); await ui.locator('[data-person-action=hide]').click();
+    await ui.waitForFunction(async () => (await chrome.storage.local.get('settings')).settings.personPolicies.male.skin.groin === 'hide');
     await ui.locator('#personAreaSelect').selectOption('face'); await ui.locator('[data-person-action=blur]').click();
     await ui.waitForFunction(async () => (await chrome.storage.local.get('settings')).settings.personPolicies.male.face === 'blur');
     await ui.reload(); await ui.locator('#saveStatus').filter({hasText:'Saved automatically'}).waitFor();
     await ui.locator('#malePolicyTab').click();
     await ui.locator('#personAreaSelect').selectOption('face');
     assert.equal(await ui.locator('[data-person-action=blur]').getAttribute('aria-pressed'),'true');
-    assert.deepEqual(await ui.evaluate(async () => { const p=(await chrome.storage.local.get('settings')).settings.personPolicies.male; return [p.skin.thighs,p.skin.neck,p.hair,p.face]; }),['hide','show','show','blur']);
+    assert.deepEqual(await ui.evaluate(async () => { const p=(await chrome.storage.local.get('settings')).settings.personPolicies.male; return [p.skin.thighs,p.skin.groin,p.skin.torso,p.skin.neck,p.hair,p.face]; }),['hide','hide','show','show','show','blur']);
     console.log('PASS: real extension policy migration and persistence across reload.');
   } finally { await extension?.close(); if(!profile.startsWith(cacheRoot+sep)||!profile.split(sep).at(-1).startsWith('popup-ux-profile-')) throw Error('Unsafe profile cleanup'); await rm(profile,{recursive:true,force:true}); }
 } finally { await browser.close(); await new Promise(done => server.close(done)); }

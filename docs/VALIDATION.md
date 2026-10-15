@@ -1,48 +1,38 @@
-# Sitr 0.5.0 release validation
+# Sitr 0.5.1 release validation
 
-Prepared locally on Windows on October 14, 2026, using Node.js 22.21.0,
-locked dependencies, Playwright Chromium, and the unpacked extension.
-This preparation does not create commits, tags, pushes, or GitHub releases.
+Prepared locally on Windows on October 15, 2026, with Node.js 22.21.0,
+locked dependencies and Playwright Chromium. Preparation leaves changes
+uncommitted and creates no tags, pushes, or public release.
 
-| Check | Result |
+TypeScript, all 167 unit tests, all 17 browser checks, and documentation-link
+checks passed for 0.5.1. The dependency audit reported zero vulnerabilities.
+
+| Check | Coverage |
 |---|---|
-| TypeScript | Passed. |
-| Unit tests | All 148 current tests across 24 files passed. |
-| Browser checks | All 15 checks passed, including the resumed suite after stabilizing background-fixture setup. |
-| Popup and settings | Gender tabs, keyboard diagram, independent face strengths, save/load recovery, model choices, video policies, website exceptions, and real extension persistence passed. |
-| Segmentation | Both packaged variants on WASM and WebGPU preference; cached edits, duplicate reuse, zero video anatomy inference, model-failure fallback, and fully shown people at maximum expansion passed. |
-| Renderers and media | First image reveal, cross-origin capture, responsive sources, visibility recovery, overlay stacking/reuse, CSS backgrounds, duplicates, and effect layers passed. |
-| Video and Meet | Shadow players, delayed roots, CORS recovery, source changes, and four local WebRTC Meet streams including presentations passed. |
-| Appearance models | Face integration and profile fixtures passed; these do not establish general accuracy. |
-| Documentation | Current main popup, area editor, basic mode, face effects, video controls, full settings, Arabic layouts/themes, and actual local coverage screenshots refreshed and inspected. Local links passed. |
+| TypeScript and unit tests | 167 tests across 27 files, including preparation, queue gating, progress, recovery, pelvis geometry, independent policies and migration. |
+| Browser regressions | 17 checks: popup/settings, warmup, body regions, groin, smoke, cross-origin media, responsive images, visibility recovery, stacking, CSS backgrounds, duplicates, cached overlays, thresholds, video compatibility, local Meet, faces and gender. |
+| Startup | All 15 preparation paths before dispatch; live popup progress/ready, restart, idempotent preparation and retained sessions across setting changes. Synthetic warmup uses no photographs. |
+| Segmentation | Both variants, CPU/WebGPU preference, clothing exclusion, caches, missing-model fallback, independent groin/torso/thigh choices and no video anatomy inference. |
+| Anatomy fixtures | Clothed male standing/seated/crossed-leg/multiple-person/cropped cases and mirrors. Earlier source numerical parity is documented in the anatomy report. |
+| Screenshots | 0.5.1 popup/settings, groin selection, startup progress/ready, English/Arabic, light/dark and locally rendered coverage. Popup status examples use deterministic test data. |
+| Package integrity | Matching package/lockfile/manifest versions; 15 model hashes, runtimes, licenses and distribution boundaries. |
 | Dependency audit | npm audit reported zero vulnerabilities. |
-| Model/build integrity | All fifteen shipped models match pinned hashes. Version metadata, packaged runtime/UI files, license files, and release boundaries passed. |
-| Archives | All three ZIP checksums verified; extension contents match dist, model/source inputs match pinned hashes, and source contents match the uncommitted working tree. Local workspaces, weights, profiles, and secrets are excluded from the source ZIP. |
-| Fresh model installation | The new model ZIP installed and verified all fifteen models in the extracted source checkout. |
-| Independent source rebuild | Fresh npm ci, TypeScript, all 148 unit tests, documentation checks, build, and release verification passed from the extracted source ZIP. All fourteen runtime/manifest/UI files matched the primary build byte for byte. |
+| Archives | Chrome, matching source and model ZIPs with SHA-256 checksums. Model ZIP includes original export inputs. Source excludes dependencies, profiles, secrets, local output and binary weights. |
 
-The previous unbounded Vitest discovery also collected an old extracted source
-under .cache. The release config now includes only tests/**/*.test.ts and limits
-worker concurrency. The exhaustive flood-fill equivalence test has a hardware-
-tolerant timeout; its assertions and coverage remain intact.
+Commands: npm run check; npm run build; npm run test:browser;
+node scripts/docs-screenshots.mjs; npm run verify:release;
+node scripts/package-release.mjs; node scripts/inspect-release.mjs.
+Run npm audit separately against the locked dependencies.
 
-The initial CSS-background check wrote settings directly to storage during
-extension startup and sometimes observed no added cover pixels. Its setup now
-waits for initialization/migration, uses the actual settings API, and verifies
-the configured policy before opening the fixture. The resumed test confirmed
-actual cover pixels, debug outlines, layout/repetition preservation, first-paint
-protection, restored styles, and disabling.
+Startup preparation measured approximately 18–22 seconds; model lookup/loading
+overhead after preparation was below 2 ms in targeted CPU/GPU probes. This does
+not establish equal total first/last-image times, general anatomy/demographic
+accuracy, every website's compatibility or zero-frame exposure. Retaining all
+sessions increases idle memory. Meet uses local WebRTC fixtures.
 
-These checks establish the tested software paths and distribution integrity.
-They do not establish demographic/anatomy accuracy, zero-frame exposure, every
-live site's compatibility, or sustained performance across hardware. Meet uses
-local loopback WebRTC fixtures, rather than an actual meeting. Cold model startup
-can take seconds. See [limits](../README.md#supported-media-and-limitations),
-[benchmark notes](../BENCHMARK.md), and [area controls](BODY-REGIONS.md).
+Release files are under release/v0.5.1/: three ZIPs, SHA256SUMS.txt and
+RELEASE_NOTES.md. Upload all three ZIPs and checksums together after reviewing
+the source; paste the notes into the GitHub release.
 
-The Chrome, source, and model ZIPs, SHA256SUMS.txt, and prepared RELEASE_NOTES.md
-are available locally under release/v0.5.0. The source rebuild used newly installed
-locked npm dependencies; one package was absent from the offline cache, so the
-install downloaded the missing pinned package before completing. No source files
-were committed, staged, tagged, pushed, or published by this preparation.
-Historical first-release evidence is kept in [0.4.2 validation](VALIDATION-0.4.2.md).
+[Anatomy evidence](GROIN-VALIDATION.md) · [Area controls](BODY-REGIONS.md) ·
+[Limits](../README.md#supported-media-and-limitations) · [Historical benchmarks](../BENCHMARK.md)

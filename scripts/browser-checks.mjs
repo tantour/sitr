@@ -3,7 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { root } from './models.mjs';
 // Run serially: concurrent GPU startup distorts latency and can trigger timeouts.
-const checks = ['popup-ux-check', 'body-regions-probe', 'smoke', 'cross-origin-probe', 'responsive-image-probe',
+const checks = ['popup-ux-check', 'warmup-probe', 'body-regions-probe', 'groin-probe', 'smoke', 'cross-origin-probe', 'responsive-image-probe',
   'visibility-recovery-probe', 'overlay-stacking-probe', 'background-image-probe',
   'duplicate-image-probe', 'overlay-reuse-probe', 'skin-threshold-render-probe',
   'video-compatibility-probe', 'meet-video-probe', 'face-probe', 'gender-probe'];

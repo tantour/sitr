@@ -17,7 +17,8 @@ the pre-TopK head and folds constants for browser WebGPU. FP32 weights are
 preserved. `src/vision/yoloRecords.ts` reproduces the removed selection on CPU.
 Intel and Paddle models are converted to ONNX without retraining their weights.
 `scripts/export-bodypix.py` converts pinned Google MobileNet 0.75 BodyPix graphs
-to FP32 ONNX foreground/part logits, discarding unused pose/offset heads; original
+to FP32 ONNX foreground/part logits and original keypoint/short-offset heads,
+discarding unused long/part-offset heads; original
 inputs and their hashes are included in the model archive.
 
 Distributors must give recipients access to the complete matching source and

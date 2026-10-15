@@ -69,4 +69,7 @@ chrome.runtime.onMessage.addListener((message: { type?: string; patch?: Partial<
 });
 void chrome.storage.local.get('settings').then(value => {
   if (!value.settings) return chrome.storage.local.set({ settings: DEFAULT_SETTINGS });
+}).then(() => ensureOffscreen()).catch(error => console.warn('Engine startup unavailable:', error));
+chrome.runtime.onStartup.addListener(() => {
+  void ensureOffscreen().catch(error => console.warn('Engine startup unavailable:', error));
 });

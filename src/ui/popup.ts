@@ -5,6 +5,7 @@ import { mediaSummary, number, percent, t } from './localization';
 import { initializeUiPreferences } from './preferences';
 import { initializePersonEditor } from './personEditor';
 import { editablePolicies, genderPolicy, hasImageCoverage } from '../config/personPolicy';
+import { initializeEngineStatus } from './engineStatus';
 
 const fields = ['enabled', 'images', 'videos', 'videoPlayback', 'videoDetector', 'imageCoverage', 'imageDetectionGate', 'imageWholeBodyEffect', 'imageEffectGrayscale', 'imageFaceEffectGrayscale', 'videoEffectGrayscale', 'automaticGender', 'imageGenderModel', 'videoGenderModel', 'faceAssociation', 'faceAssociationMode', 'debugOverlay', 'imageUnknown', 'videoUnknown', 'performance', 'onnxThreads'] as const;
 const skinToggleFields = ['imageBodyRegionMode'] as const;
@@ -32,6 +33,7 @@ let siteHostLabel = 'Checking website…';
 let currentSaveMessage = 'Loading settings…';
 let currentSaveState = 'saved';
 const outputUpdaters = new Map<string, () => void>();
+const engineStatus = initializeEngineStatus(() => element('retryEngine').click());
 let pendingSaves = 0;
 let saveFailed = false;
 let websiteDraft: string | undefined;
@@ -340,6 +342,7 @@ element('retryEngine').onclick = async () => {
     if (ensured?.ok === false) throw new Error(ensured.error);
     const retried = await chrome.runtime.sendMessage({ type: 'retry-engine' });
     if (retried?.ok === false) throw new Error(retried.error);
+    await engineStatus.refresh();
     try {
       const tab = await websiteTab();
       if (tab.id !== undefined) await chrome.tabs.sendMessage(tab.id, { type: 'retry-media' });
@@ -358,6 +361,7 @@ initializeUiPreferences(() => {
   element('siteHost').textContent = t(siteHostLabel);
   saveStatus(currentSaveMessage, currentSaveState);
   outputUpdaters.forEach(update => update());
+  engineStatus.render();
   if (settings) { updateMaskControls(); updateProtectionState(); }
 }, message => saveStatus(message, 'error'), () => {
   if (currentSaveMessage === 'Could not save display settings. Try again.' || currentSaveMessage === 'Could not load display settings. Try again.') {
@@ -381,3 +385,4 @@ async function initialize(): Promise<void> {
 }
 element('retrySettings').onclick = () => { void initialize(); };
 void initialize();
+void engineStatus.refresh();

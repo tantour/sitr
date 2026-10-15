@@ -10,6 +10,9 @@ export async function verifyRelease() {
   const manifest = JSON.parse(await readFile(resolve(directory, 'manifest.json'), 'utf8'));
   const pkg = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
   assert.equal(manifest.version, pkg.version, 'Package and extension versions differ');
+  const lock = JSON.parse(await readFile(resolve(root, 'package-lock.json'), 'utf8'));
+  assert.equal(lock.version, pkg.version, 'Lockfile version differs');
+  assert.equal(lock.packages[''].version, pkg.version, 'Lockfile root version differs');
   assert.equal(pkg.license, 'AGPL-3.0-only');
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.minimum_chrome_version, '148');
@@ -30,7 +33,8 @@ export async function verifyRelease() {
     'docs/images/popup.png', 'docs/images/popup-en-dark.png', 'docs/images/popup-ar-light.png',
     'docs/images/coverage-example.png', 'docs/images/settings-desktop.png',
     'docs/images/popup-areas.png', 'docs/images/popup-basic.png', 'docs/images/popup-face.png',
-    'docs/images/popup-video.png', 'docs/images/settings-ar.png'];
+    'docs/images/popup-video.png', 'docs/images/settings-ar.png', 'docs/images/popup-groin.png',
+    'docs/images/startup-progress.png', 'docs/images/startup-ready.png', 'docs/images/startup-progress-ar-dark.png'];
   for (const file of required) assert((await stat(resolve(directory, file))).size > 0, `Missing or empty ${file}`);
   await verifyModels(resolve(directory, 'models'));
   const expected = JSON.parse(await readFile(resolve(root, 'models/artifacts.json'), 'utf8'));

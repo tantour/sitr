@@ -9,6 +9,7 @@ their original licenses; the project license does not replace those licenses.
 | bus.mp4, bus-long.mp4 | Local video fixtures derived from the bus photograph; same upstream attribution/AGPL license | Encoded short clips used to exercise moving/sampled media. They are not independent real-world video benchmarks. |
 | woman-profile.jpg | Pedro Ribeiro Simões, [Woman profile portrait](https://commons.wikimedia.org/wiki/File:Woman_profile_portrait_(26138832421).jpg), [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | Downloaded/resized JPEG used for a side-facing crop. |
 | man-profile.jpg | Pedro Ribeiro Simões, [Man profile portrait](https://commons.wikimedia.org/wiki/File:Man_profile_portrait_(5652920331).jpg), [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/) | Downloaded/resized JPEG used for a side-facing crop. |
+| man-seated.jpg | John Thomas, National Library of Wales, [A man sitting in a chair, circa 1875](https://commons.wikimedia.org/wiki/File:A_man_sitting_in_a_chair_NLW3364646.jpg), [public domain](https://creativecommons.org/publicdomain/mark/1.0/) | Unmodified 421×588 JPEG of a fully clothed man; SHA-256 `02c8c6444cb34b9acc8fb7e3f70c57bfc1bff1b6434991234ec9753389cd8ec5`. Used for seated-pelvis tests. |
 
 The full GNU AGPL and Creative Commons license texts are in LICENSES/. Portrait
 classifier labels are fallible visual estimates, not claims about identity or

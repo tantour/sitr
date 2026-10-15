@@ -19,7 +19,7 @@ describe('optional image body-region policies', () => {
   it('migrates old settings with the feature off and validates independent allowlists', () => {
     expect(normalizeSettings({ schemaVersion: 16 }).imageBodyRegionMode).toBe('off');
     const parsed = normalizeSettings({ imageBodyRegionMode: 'bad', imageFemaleAllowedRegions: ['thighs', 'thighs', 'belly'], imageMaleAllowedRegions: 'torso' });
-    expect(parsed.schemaVersion).toBe(19); expect(parsed.imageBodyRegionMode).toBe('off');
+    expect(parsed.schemaVersion).toBe(20); expect(parsed.imageBodyRegionMode).toBe('off');
     expect(parsed.imageFemaleAllowedRegions).toEqual(['thighs']); expect(parsed.imageMaleAllowedRegions).toEqual([]);
   });
   it('allows a male torso but covers thighs; female arms stay visible while torso is covered', () => {

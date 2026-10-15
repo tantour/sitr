@@ -4,7 +4,7 @@
 import { BODY_REGIONS, ENGINE, resolvePersonSize, type FaceEffect, type WholeBodyEffect, type Settings, type Label } from '../config/settings';
 import { faceStrength, genderPolicy, hasBodyCoverage, hasFaceEffects, policyFor } from '../config/personPolicy';
 import { regionCoverage } from '../rendering/regionCoverage';
-import type { AnalysisResult, FramePacket, FrameKey, Track, WorkerInput, WorkerOutput } from '../state/contracts';
+import type { AnalysisResult, FramePacket, FrameKey, Track, WorkerInput, WorkerOutput, PersonDetection } from '../state/contracts';
 import type { YoloPersonSegmenter } from '../vision/person';
 import type { FastPersonDetector } from '../vision/fastPerson';
 import type { AppearanceGenderClassifier } from '../vision/gender';
@@ -25,6 +25,7 @@ import { imageAnalysisKey } from '../config/imageAnalysis';
 import type { BodyPixRegionSegmenter } from '../vision/bodyRegions';
 import { allowedRegionIds, bodyRegionsEnabled } from '../vision/bodyRegionMap';
 import type { BodyRegionDiagnostics } from '../state/contracts';
+import { MODEL_SIZES, BODY_REGION_MODES, BODY_GENDER_MODELS, warmModels, warmupPixels } from '../vision/warmup';
 
 type FaceLabel = { label: Label; labelUsable: boolean };
 type Session = { epoch: number; tracker: ByteTracker; lastTouched: number; lastBytes: number; kind?: 'image' | 'video'; imageAnalysis?: string; timingsMs?: AnalysisResult['timingsMs']; genderDiagnostics?: AnalysisResult['genderDiagnostics']; bodyRegionDiagnostics?: BodyRegionDiagnostics; last?: { frame: FramePacket; tracks: Track[]; categories: Uint8Array; bodyRegions?: Uint8Array; composition: Composition; faceAssociations?: FaceAssociation[]; detectedFaces?: FaceBox[]; faceLabels?: FaceLabel[] } };
@@ -43,6 +44,7 @@ let bodyGenderConstructor: typeof BodyGenderClassifier | undefined;
 let faceConstructor: typeof OptionalFaceDetector | undefined;
 let bodyRegionConstructor: typeof BodyPixRegionSegmenter | undefined;
 let bodyRegionModel: BodyPixRegionSegmenter | undefined;
+const bodyRegionModels = new Map<'faster' | 'finer', BodyPixRegionSegmenter>();
 let bodyRegionRetryAt = 0;
 let bodyRegionFailure = '';
 let bodyRegionFailedMode: Settings['imageBodyRegionMode'] = 'off';
@@ -54,6 +56,7 @@ let semantic: SelfieSemanticSegmenter | undefined;
 let semanticClient: SemanticClient | undefined;
 let faces: OptionalFaceDetector | undefined;
 let faceModelSize = 320;
+const faceModels = new Map<number, OptionalFaceDetector>();
 let semanticPreference: 'auto' | 'cpu' = 'auto';
 let onnxPreference: 'wasm' | 'webgpu' = 'webgpu';
 let onnxThreads: number | undefined;
@@ -61,6 +64,7 @@ let parallelSemantic = false;
 let settings: Settings | undefined;
 let warming: Promise<void> | undefined;
 let analyzing = false;
+let warmReport: Awaited<ReturnType<typeof warmModels>> | undefined;
 
 function send(output: WorkerOutput): void {
   if (output.type !== 'result') { postMessage(output); return; }
@@ -224,20 +228,73 @@ async function ensureModels(size: number, needSemantic = true, fast = false): Pr
     bodyRegionConstructor = runtime.BodyPixRegionSegmenter;
   }
   if (!personConstructor) throw new Error('Person runtime unavailable');
-  if (personModels.size >= 2) {
-    const oldest = [...personModels.entries()].sort((a, b) => a[1].lastUsed - b[1].lastUsed)[0];
-    personModels.delete(oldest[0]);
-    await oldest[1].model.dispose();
-  }
   if (fast && size !== 256) throw new Error('Fast person detector requires 256-pixel input');
   const model = fast ? new fastConstructor!(onnxPreference, onnxThreads)
     : new personConstructor(size, onnxPreference, onnxThreads);
-  await model.initialize();
+  try { await model.initialize(); } catch (error) { await model.dispose(); throw error; }
   personModels.set(key, { model, lastUsed: Date.now() });
   await semanticReady;
   return model;
 }
-async function inferBodyRegions(frame: FramePacket, categories: Uint8Array, current: Settings, reused?: CachedImage): Promise<{
+async function ensureBodyRegions(mode: 'faster' | 'finer'): Promise<BodyPixRegionSegmenter> {
+  const prior = bodyRegionModels.get(mode);
+  if (prior) return prior;
+  if (!bodyRegionConstructor) throw new Error('BodyPix runtime unavailable');
+  const model = new bodyRegionConstructor(mode, onnxPreference, onnxThreads);
+  try { await model.initialize(); } catch (error) { await model.dispose(); throw error; }
+  bodyRegionModels.set(mode, model);
+  return model;
+}
+async function ensureFaces(size: 256 | 320 | 416): Promise<OptionalFaceDetector> {
+  const prior = faceModels.get(size);
+  if (prior) return prior;
+  if (!faceConstructor) throw new Error('Face runtime unavailable');
+  const model = new faceConstructor('wasm', onnxThreads, size);
+  try { await model.initialize(); } catch (error) { await model.dispose(); throw error; }
+  faceModels.set(size, model);
+  return model;
+}
+async function ensureGender(): Promise<AppearanceGenderClassifier> {
+  if (!genderModel) {
+    if (!genderConstructor) throw new Error('Gender runtime unavailable');
+    const model = new genderConstructor('wasm', onnxThreads);
+    try { await model.initialize(); } catch (error) { await model.dispose(); throw error; }
+    genderModel = model;
+  }
+  return genderModel;
+}
+async function ensureBodyGender(choice: BodyGenderModel): Promise<BodyGenderClassifier> {
+  const prior = bodyGenderModels.get(choice);
+  if (prior) return prior;
+  if (!bodyGenderConstructor) throw new Error('Body gender runtime unavailable');
+  const model = new bodyGenderConstructor(choice, 'wasm', onnxThreads);
+  try { await model.initialize(); } catch (error) { await model.dispose(); throw error; }
+  bodyGenderModels.set(choice, model);
+  return model;
+}
+async function warmAll(): Promise<void> {
+  if (warmReport) { send({ type: 'warmed', ...warmReport }); return; }
+  const pixels = warmupPixels(320);
+  const boxes = [{ x: 0.2, y: 0.1, width: 0.6, height: 0.8 }];
+  warmReport = await warmModels([
+    ...MODEL_SIZES.map(size => ({ name: `segment:${size}`, run: async () =>
+      (await ensureModels(size, false)).segment(warmupPixels(size), 0.99) })),
+    { name: 'fast:256', run: async () => (await ensureModels(256, false, true)).segment(warmupPixels(256), 0.99) },
+    ...MODEL_SIZES.map(size => ({ name: `semantic:${size}`, run: async () => {
+      await ensureModels(size, true);
+      return semanticClient ? semanticClient.segment(warmupPixels(size), size) : semantic!.segment(warmupPixels(size), size);
+    } })),
+    ...MODEL_SIZES.map(size => ({ name: `face:${size}`, run: async () => (await ensureFaces(size)).detect(pixels, 320) })),
+    { name: 'gender:face', run: async () => (await ensureGender()).classify(pixels, 320, boxes) },
+    ...BODY_GENDER_MODELS.map(choice => ({ name: `gender:${choice}`, run: async () =>
+      (await ensureBodyGender(choice)).classify(pixels, 320, boxes) })),
+    ...BODY_REGION_MODES.map(mode => ({ name: `regions:${mode}`, run: async () =>
+      (await ensureBodyRegions(mode)).segment(pixels, 320, new Uint8Array(320 * 320)) })),
+  ], progress => send({ type: 'warm-progress', progress }));
+  // A partial failure remains visible; existing per-model fallbacks can retry it.
+  send({ type: 'warmed', ...warmReport });
+}
+async function inferBodyRegions(frame: FramePacket, categories: Uint8Array, current: Settings, detections: PersonDetection[], reused?: CachedImage): Promise<{
   map?: Uint8Array; diagnostics: BodyRegionDiagnostics; ms: number; stages: { preprocess: number; run: number; decode: number };
 }> {
   const skinPixels = categories.reduce((sum, label) => sum + Number(label === 2), 0);
@@ -248,7 +305,6 @@ async function inferBodyRegions(frame: FramePacket, categories: Uint8Array, curr
     femaleAllowedRegions: [...current.imageFemaleAllowedRegions], maleAllowedRegions: [...current.imageMaleAllowedRegions] };
   const stages = { preprocess: 0, run: 0, decode: 0 };
   if (diagnostics.status !== 'ready') {
-    if (current.imageBodyRegionMode === 'off' && bodyRegionModel) { await bodyRegionModel.dispose(); bodyRegionModel = undefined; }
     return { diagnostics, ms: 0, stages };
   }
   if (reused?.bodyRegions && reused.bodyRegionDiagnostics) return {
@@ -259,15 +315,15 @@ async function inferBodyRegions(frame: FramePacket, categories: Uint8Array, curr
   try {
     if (bodyRegionFailedMode === current.imageBodyRegionMode && Date.now() < bodyRegionRetryAt) throw new Error(bodyRegionFailure);
     if (bodyRegionModel?.mode !== current.imageBodyRegionMode) {
-      await bodyRegionModel?.dispose(); bodyRegionModel = undefined;
-      if (!bodyRegionConstructor) throw new Error('BodyPix runtime unavailable');
-      const model = new bodyRegionConstructor(current.imageBodyRegionMode as 'faster' | 'finer', onnxPreference, onnxThreads);
-      try { await model.initialize(); } catch (error) { await model.dispose(); throw error; }
-      bodyRegionModel = model;
+      bodyRegionModel = undefined;
+      bodyRegionModel = await ensureBodyRegions(current.imageBodyRegionMode as 'faster' | 'finer');
     }
-    const map = await bodyRegionModel!.segment(frame.rgba, frame.width, categories);
+    const map = await bodyRegionModel!.segment(frame.rgba, frame.width, categories, detections);
     diagnostics.backend = bodyRegionModel!.getBackend(); diagnostics.inputSize = bodyRegionModel!.getInputSize();
     diagnostics.stride = current.imageBodyRegionMode === 'faster' ? 16 : 8;
+    const pelvis = bodyRegionModel!.getLastPelvisEstimates();
+    diagnostics.groinEstimatedPeople = pelvis.filter(Boolean).length;
+    diagnostics.groinSkippedPeople = pelvis.length - diagnostics.groinEstimatedPeople;
     diagnostics.unknownSkinPixels = categories.reduce((sum, label, index) => sum + Number(label === 2 && map[index] === 0), 0);
     bodyRegionRetryAt = 0;
     return { map, diagnostics, ms: performance.now() - at, stages: bodyRegionModel!.getLastTimings() };
@@ -276,6 +332,7 @@ async function inferBodyRegions(frame: FramePacket, categories: Uint8Array, curr
     diagnostics.error = (error instanceof Error ? error.message : String(error)).slice(0, 300);
     bodyRegionFailure = diagnostics.error; bodyRegionFailedMode = current.imageBodyRegionMode; bodyRegionRetryAt = Date.now() + 5000;
     await bodyRegionModel?.dispose().catch(() => {}); bodyRegionModel = undefined;
+    bodyRegionModels.delete(current.imageBodyRegionMode as 'faster' | 'finer');
     console.warn('BodyPix unavailable; covering skin with the existing model:', diagnostics.error);
     return { diagnostics, ms: performance.now() - at, stages };
   }
@@ -455,10 +512,6 @@ function renderCached(session: Session, current: Settings): AnalysisResult {
 async function analyze(frame: FramePacket): Promise<void> {
   await warming;
   if (!settings) throw new Error('Settings unavailable');
-  if (genderModel && settings.imageGenderModel.startsWith('body-') && settings.videoGenderModel.startsWith('body-')) {
-    await genderModel.dispose();
-    genderModel = undefined;
-  }
   const started = performance.now();
   const side = resolvePersonSize(settings, frame.kind);
   if (frame.width !== side || frame.height !== side || frame.rgba.length !== side * side * 4 || frame.rgba.byteLength > ENGINE.maxPayloadBytes) throw new Error('Invalid frame dimensions');
@@ -497,7 +550,7 @@ async function analyze(frame: FramePacket): Promise<void> {
     }
   })();
   const [detections, categories] = await Promise.all([personTask, semanticTask]);
-  const bodyRegions = await inferBodyRegions(frame, categories, settings, reused);
+  const bodyRegions = await inferBodyRegions(frame, categories, settings, detections, reused);
   if (!reused) for (const detection of detections)
     detection.appearance = personAppearance(frame.rgba, side, detection.box);
   const cacheEntry: CachedImage | undefined = frame.kind === 'image' ? reused ?? {
@@ -550,14 +603,8 @@ async function analyze(frame: FramePacket): Promise<void> {
     const faceRgba = frame.faceRgba ?? frame.rgba;
     const faceSide = frame.faceSize ?? side;
     try {
-      if (faces && faceModelSize !== settings.yunetSize) { await faces.dispose(); faces = undefined; }
-      if (!faces) {
-        if (!faceConstructor) throw new Error('Face runtime unavailable');
-        const detector = new faceConstructor('wasm', onnxThreads, settings.yunetSize);
-        await detector.initialize();
-        faces = detector;
-        faceModelSize = settings.yunetSize;
-      }
+      faces = await ensureFaces(settings.yunetSize);
+      faceModelSize = settings.yunetSize;
       const currentFaces = (cacheEntry?.faces ?? await faces.detect(faceRgba, faceSide))
         .filter(face => face.score >= settings!.faceDetectionConfidence && face.box.width * faceSide >= settings!.minFaceSizePx);
       if (!cacheEntry?.faces) faceStages = faces.getLastTimings();
@@ -587,12 +634,7 @@ async function analyze(frame: FramePacket): Promise<void> {
         diagnostics.attempted = eligible.length;
         diagnostics.faceGenderAttempts = eligible.length;
         if (eligible.length) {
-          if (!genderModel) {
-            if (!genderConstructor) throw new Error('Gender runtime unavailable');
-            const classifier = new genderConstructor('wasm', onnxThreads);
-            await classifier.initialize();
-            genderModel = classifier;
-          }
+          await ensureGender();
           const estimates = eligible.map(index => cacheEntry?.gender?.[index]);
           const missing = eligible.flatMap((index, position) => estimates[position] ? [] : [{ index, position }]);
           if (missing.length) {
@@ -601,8 +643,8 @@ async function analyze(frame: FramePacket): Promise<void> {
             }
             for (let start = 0; start < missing.length; start += ENGINE.maxPersonsPerFrame) {
               const batch = missing.slice(start, start + ENGINE.maxPersonsPerFrame);
-              const fresh = await genderModel.classify(faceRgba, faceSide, batch.map(item => currentFaces[item.index].box));
-              const stages = genderModel.getLastTimings();
+              const fresh = await genderModel!.classify(faceRgba, faceSide, batch.map(item => currentFaces[item.index].box));
+              const stages = genderModel!.getLastTimings();
               genderStages = { preprocess: genderStages.preprocess + stages.preprocess,
                 run: genderStages.run + stages.run, decode: genderStages.decode + stages.decode };
               for (const [index, item] of batch.entries()) {
@@ -634,6 +676,7 @@ async function analyze(frame: FramePacket): Promise<void> {
       faceRetryAt = Date.now() + 5000;
       if (genderModel) { void genderModel.dispose().catch(() => {}); genderModel = undefined; }
       if (faces) { void faces.dispose().catch(() => {}); faces = undefined; }
+      faceModels.delete(faceModelSize);
       diagnostics.error = error instanceof Error ? error.message : String(error);
       console.warn('Automatic gender inference unavailable:', error);
     }
@@ -647,13 +690,7 @@ async function analyze(frame: FramePacket): Promise<void> {
     if (candidates.length) {
       const bodyAt = performance.now();
       try {
-        let classifier = bodyGenderModels.get(bodyGender);
-        if (!classifier) {
-          if (!bodyGenderConstructor) throw new Error('Body gender runtime unavailable');
-          classifier = new bodyGenderConstructor(bodyGender, 'wasm', onnxThreads);
-          await classifier.initialize();
-          bodyGenderModels.set(bodyGender, classifier);
-        }
+        const classifier = await ensureBodyGender(bodyGender);
         const estimates = await classifier.classify(frame.rgba, side, candidates.map(track => track.box));
         const stages = classifier.getLastTimings();
         genderStages = { preprocess: genderStages.preprocess + stages.preprocess,
@@ -715,12 +752,9 @@ self.onmessage = async (event: MessageEvent<WorkerInput>) => {
       semanticPreference = message.semantic; onnxPreference = message.onnx;
       onnxThreads = message.threads; parallelSemantic = message.parallelSemantic; return;
     }
-    if (message.type === 'warm') {
-      if (warming || analyzing) return;
-      warming = (async () => {
-        await ensureModels(message.size, message.semantic, message.kind === 'video' && message.detector === 'fast-box');
-        // Face and attribute sessions start with the first detected person.
-      })().catch(error => console.warn('Model warmup unavailable:', error)).finally(() => { warming = undefined; });
+    if (message.type === 'warm-all' || message.type === 'warm') {
+      if (!warming && !analyzing) warming = warmAll().finally(() => { warming = undefined; });
+      await warming;
       return;
     }
     if (message.type === 'reset') {
@@ -733,7 +767,6 @@ self.onmessage = async (event: MessageEvent<WorkerInput>) => {
       const session = sessions.get(message.key.mediaSessionId);
       if (!session || session.epoch !== message.key.epoch || !session.last || session.last.frame.key.sequence !== message.key.sequence) throw new Error('Cached analysis unavailable');
       if (session.kind === 'image' && session.imageAnalysis !== imageAnalysisKey(settings)) throw new Error('Cached analysis unavailable');
-      if (settings.imageBodyRegionMode === 'off' && bodyRegionModel) { await bodyRegionModel.dispose(); bodyRegionModel = undefined; }
       send({ type: 'result', result: renderCached(session, settings) });
       return;
     }

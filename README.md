@@ -6,7 +6,9 @@
 
 Sitr is a Chrome extension that covers selected people in supported images and videos. Choose skin and hair coverage or whole-person coverage, use black masks, blur, or a pixelated mosaic, and tune images and videos separately. English and Arabic interfaces include light, dark, and system themes.
 
-<img src="docs/images/popup.png" width="440" alt="Sitr 0.5.0 main controls: protection, media tabs, cover area, and Advanced segmentation">
+**New in 0.5.1:** separate groin coverage, improved upper thighs, models prepared ahead of browsing, and visible startup progress. [See the update and screenshots](#what-changed-in-051).
+
+<img src="docs/images/popup.png" width="440" alt="Sitr 0.5.1 main controls: protection, media tabs, cover area, and Advanced segmentation">
 
 **Requires Chrome 148 or newer.** Sitr uses local AI estimates that can miss people, misclassify appearance, or leave parts of moving media uncovered. It does not guarantee that every unwanted image or video frame is hidden. [Supported media and limitations](#supported-media-and-limitations).
 
@@ -14,7 +16,7 @@ Sitr is a Chrome extension that covers selected people in supported images and v
 
 ### From a GitHub release
 
-1. Open [Sitr v0.5.0](https://github.com/tantour/sitr/releases/tag/v0.5.0) release page and download `sitr-0.5.0-chrome.zip` and `SHA256SUMS.txt`.
+1. Open [Sitr v0.5.1](https://github.com/tantour/sitr/releases/tag/v0.5.1) release page and download `sitr-0.5.1-chrome.zip` and `SHA256SUMS.txt`.
 2. Verify the ZIP's SHA-256 against the checksum file, then extract it into a permanent folder. Do not load the ZIP itself.
 3. Visit `chrome://extensions`, turn on **Developer mode**, and choose **Load unpacked**.
 4. Select the extracted folder containing `manifest.json`. Pin **Sitr** using Chrome's extensions menu.
@@ -30,8 +32,8 @@ Use **Node.js 22.12+**, npm, and Git. Model binaries live in release assets to k
 
 ```sh
 npm ci
-# Download sitr-0.5.0-models.zip from the matching release first.
-npm run models -- --archive /path/to/sitr-0.5.0-models.zip
+# Download sitr-0.5.1-models.zip from the matching release first.
+npm run models -- --archive /path/to/sitr-0.5.1-models.zip
 npm run check
 npm run build
 npm run verify:release
@@ -54,7 +56,9 @@ Load `dist/` using the same Chrome steps above. Commands also work in PowerShell
 ## Examples
 
 In **Images**, enable the visible **Advanced segmentation** switch, choose **Male → Show all**, click the thighs on the person,
-and choose **Hide** to cover only exposed thigh skin. Face, hair, neck and
+and choose **Hide** to cover only exposed thigh skin. **Groin (pelvis)** now has
+its own choice; hide it alongside thighs to cover both while leaving the torso
+shown. Face, hair, neck and
 other shown areas keep their own choices. The Female tab is independent.
 Click a face to choose Show, Black, Blur or Pixelate. Blur and Pixelate show a strength slider directly below; strength is separate for each gender.
 
@@ -97,6 +101,10 @@ The coverage example uses this release with both gender policies set to Hide all
 
 Inference runs locally using packaged models. Sitr has no analytics, account, telemetry, or inference server. Frames, crops, masks, and temporary tracks remain in memory; settings and theme/language preferences are stored in Chrome's local extension storage.
 
+At browser/extension startup, Sitr loads every model variant and runs neutral synthetic inputs to prepare inference. Sessions stay in the shared offscreen worker, including unused segmentation and appearance choices, so the first image and later setting changes avoid model loading and GPU compilation. This uses more idle memory. Startup preparation still takes time after a browser restart, extension reload, or engine recovery; discovered media stays protected while it completes. Actual processing time varies with image content and hardware.
+
+The popup shows preparation steps and elapsed time, then **Ready for images and videos**. Progress counts completed steps rather than estimated seconds remaining; some steps take longer than others. If preparation fails or a feature is unavailable, use **Retry** beside the status.
+
 Sitr needs HTTP(S) host access to analyze page media and fetch unreadable images from their original URLs. Those requests may include existing cookies and are visible to the original website or CDN. A video CORS recovery check may reload a player once and briefly interrupt playback. See the full [privacy policy and permission explanation](PRIVACY.md).
 
 ## Supported media and limitations
@@ -109,11 +117,18 @@ Animated images, DRM/unreadable streams, canvas players, browser-internal pages,
 
 This is a browser filtering aid. It does not interpret religious rules or determine whether content is permissible. Validate the settings on the content you use. [Detailed behavior](docs/USER_GUIDE.md), [architecture](docs/ARCHITECTURE.md), and [measured performance](BENCHMARK.md) explain the practical limits. Historical benchmark numbers are not a release-wide performance guarantee.
 
-## What changed in 0.5.0
+## What changed in 0.5.1
 
-This second release adds the interactive gender/area editor, optional Fast/Quality anatomy segmentation, separate face strengths, and diagnostics for body regions and cached inference. Shown areas resist mask expansion, including fully shown hair and neck; the upper-arm/forearm labels now cover both arms correctly. It also includes live-video source handling and rotating analysis for Google Meet tiles. Existing coverage settings migrate to the new editor.
+- **Separate groin coverage:** Groin (pelvis) has its own image-area action, independent of torso and thighs, in English and Arabic. Existing settings inherit the former torso choice so saved coverage is preserved.
+- **Improved upper thighs:** existing BodyPix shoulder, hip, and knee landmarks help locate the pelvis and extend thigh coverage upward. This uses the existing model backbone, with restored pose outputs and no retraining. Clothing remains outside skin-only coverage.
+- **Models prepared ahead of time:** every model variant runs synthetic warmup at browser/extension startup and stays loaded across pages and setting changes. Recovery repeats preparation. Keeping the models ready uses more idle memory.
+- **Visible startup progress:** the popup shows actual completed steps and elapsed seconds, then Ready for images and videos. Limited-feature and failure states offer Retry. The bar measures completed steps, not time remaining.
 
-The optional segmentation stage adds approximately **34 ms (Fast)** or **94 ms (Quality)** in the measured warm WebGPU fixture on an Intel i5-8250U/UHD 620, with roughly **9.84 MB** of additional packaged weights. Cold startup can take seconds; these are local fixture results, not timing guarantees. Changing area or face-strength choices reuses cached image inference. [Details and limitations](docs/BODY-REGIONS.md).
+<p><img src="docs/images/popup-groin.png" width="360" alt="Male groin and thigh coverage selected independently of torso"> <img src="docs/images/startup-progress.png" width="360" alt="Startup preparation: six of fifteen steps completed with eight seconds elapsed"></p>
+
+<p><img src="docs/images/startup-ready.png" width="360" alt="Popup showing Ready for images and videos"> <img src="docs/images/startup-progress-ar-dark.png" width="360" alt="Arabic startup progress in the dark theme"></p>
+
+Local startup checks took approximately **18–22 seconds** on the test machine. Once prepared, model lookup/loading overhead on tested first frames and setting changes was below **2 ms**; total image processing still varied. This is not a promise of equal first/last-image latency. The optional anatomy models together contain approximately **10.00 MB** of weights. Historical 34/94 ms anatomy-stage measurements preceded the restored pose heads and do not benchmark this release. [Anatomy validation](docs/GROIN-VALIDATION.md) · [Full release notes](docs/RELEASE-NOTES-0.5.1.md).
 
 ## Development and releases
 
@@ -125,7 +140,7 @@ npm run test:browser            # UI, real extension, media and regression check
 npm run release                # Checks, build, browser suite, ZIPs and SHA-256
 ```
 
-The release command writes the extension, corresponding source, and model ZIPs to `release/v0.5.0/`. Publish all three and the checksums together. Packaging is local and never creates a commit, tag, or GitHub release. [Prepared release notes](docs/RELEASE-NOTES-0.5.0.md) · [Validation results](docs/VALIDATION.md) · [Contribution guide](CONTRIBUTING.md) · [Release instructions](docs/RELEASING.md) · [Security reporting](SECURITY.md) · [Changelog](CHANGELOG.md).
+The release command writes the extension, corresponding source, and model ZIPs to `release/v0.5.1/`. Publish all three and the checksums together. Packaging is local and never creates a commit, tag, or GitHub release. [Prepared release notes](docs/RELEASE-NOTES-0.5.1.md) · [Validation results](docs/VALIDATION.md) · [Contribution guide](CONTRIBUTING.md) · [Release instructions](docs/RELEASING.md) · [Security reporting](SECURITY.md) · [Changelog](CHANGELOG.md).
 
 ## License
 

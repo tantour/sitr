@@ -45,5 +45,6 @@ describe('Arabic UI language', () => {
     expect(t('Slower · higher quality · stride 8')).toContain('أبطأ');
     expect(t('Torso (chest and belly)')).toContain('الصدر والبطن');
     expect(t('Thighs')).toBe('الفخذان');
+    expect(t('Groin (pelvis)')).toBe('منطقة العانة (الحوض)');
   });
 });

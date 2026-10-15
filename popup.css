@@ -20,6 +20,19 @@ button:disabled,input:disabled,select:disabled,textarea:disabled{cursor:default;
 .brand span{display:block;margin-top:2px;color:var(--muted);font-size:11px}
 .local-note,#version{color:var(--muted);font-size:11px}
 .workspace{display:flex;min-height:0;flex:1}
+.engine-status{flex-shrink:0;padding:8px 18px;border-bottom:1px solid var(--line);font-size:12px;background:var(--paper)}
+.engine-status-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+#engineStatusTitle{display:flex;align-items:center;gap:8px;font-weight:600}
+#engineStatusTitle:before{content:"";width:6px;height:6px;flex:none;border-radius:50%;background:var(--muted)}
+.engine-status[data-state=ready] #engineStatusTitle:before{background:var(--sea)}
+.engine-status[data-state=error],.engine-status[data-state=limited],.engine-status[data-state=unavailable]{color:var(--warning-ink);background:var(--warning)}
+.engine-status[data-state=error] #engineStatusTitle:before,.engine-status[data-state=limited] #engineStatusTitle:before,.engine-status[data-state=unavailable] #engineStatusTitle:before{background:currentColor}
+#engineStatusDetail{margin-top:4px;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.engine-status[data-state=error] #engineStatusDetail,.engine-status[data-state=limited] #engineStatusDetail,.engine-status[data-state=unavailable] #engineStatusDetail{color:inherit}
+#engineProgress{display:block;width:100%;height:4px;margin-top:7px;border:0;border-radius:2px;overflow:hidden;background:var(--line);accent-color:var(--sea)}
+#engineProgress::-webkit-progress-bar{background:var(--line);border-radius:2px}
+#engineProgress::-webkit-progress-value{background:var(--sea);border-radius:2px}
+#retryPreparation{min-height:28px;padding:3px 9px;font-size:11px;flex:none}
 main{width:100%;min-width:0;overflow:auto;padding:14px 18px;scrollbar-width:thin;scrollbar-color:var(--scrollbar) var(--white)}
 h2{margin:0;font-size:14px;font-weight:650}
 p{margin:0}

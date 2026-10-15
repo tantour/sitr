@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.1 — October 15, 2026
+
+- Show real startup preparation progress and elapsed time in the popup, with ready, limited-feature, and retry states in English and Arabic.
+
+- Prepare all model variants on browser/extension startup using two synthetic inference passes; retain sessions across pages and setting changes. Gate the analysis queue until preparation completes and repeat preparation after engine recovery.
+
+- Add a separate Groin (pelvis) skin choice, in English and Arabic, using the existing BodyPix weights' hip/shoulder landmarks. Correct thigh coverage using hip-to-knee landmarks; preserve hands, face, hair, clothing, and independent torso choices.
+- Restore the original pose/short-offset heads in both BodyPix exports without retraining or changing dense segmentation outputs. Saved groin choices inherit the old torso action; settings migrate to schema 20.
+- Add modest, mostly male anatomy probes, mirrored standing/seated/crossed-leg fixtures, source-head parity checks, and confidence/overlap/crop tests.
+
 ## 0.5.0 — October 14, 2026
 
 - Replace the global people filter with Female/Male tabs and a clickable, keyboard-accessible body editor. Choose Show/Hide per image area, face Show/Black/Blur/Pixelate, and independent video effects.

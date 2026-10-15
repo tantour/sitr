@@ -10,10 +10,21 @@ Sitr cannot guarantee that no uncensored frame can appear. Browser measurements,
 
 ## Install and run
 
+At extension/browser startup, every model variant is prepared using synthetic
+inputs and retained in memory. The popup shows actual completed preparation
+steps and elapsed seconds, then **Ready for images and videos**. Steps take
+different amounts of time; the bar is not a countdown. **Retry** appears if
+preparation fails or a feature is unavailable. Reload or engine recovery repeats
+preparation. Keeping the models ready uses more idle memory.
+
+In Advanced segmentation, **Groin (pelvis)** is separate from torso and thighs.
+Existing torso choices migrate to groin. To hide groin and thigh skin while
+showing torso, select each of those two areas and choose **Hide**.
+
 YOLO prefers WebGPU with graph capture and a persistent GPU input buffer, falling back to the original WASM model when GPU setup fails. A worker failure or timeout also retries on WASM. MediaPipe semantic segmentation runs for every still image, including whole-body modes, to cover foreground regions missed by YOLO; video skips it. YuNet and FastFace retain WASM. No resolution, confidence threshold, weights or FP32 precision were reduced. The CPU thread setting controls WASM, not GPU parallelism. Native 20–30 ms inference is not guaranteed; see the measured results in BENCHMARK.md.
 
 1. In PowerShell, open the project root and run `npm.cmd ci`.
-2. Install a model ZIP matching this source revision with `npm.cmd run models -- --archive path/to/sitr-0.5.0-models.zip`, then run `npm.cmd run build`. Use the matching v0.5.0 bundle, which includes all fifteen models; source exports are documented in [models/README.md](../models/README.md).
+2. Install a model ZIP matching this source revision with `npm.cmd run models -- --archive path/to/sitr-0.5.1-models.zip`, then run `npm.cmd run build`. Use the matching v0.5.1 bundle, which includes all fifteen models; source exports are documented in [models/README.md](../models/README.md).
 3. In Chrome 148+, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this folder's `dist` directory.
 4. Open a page with images or readable video. Sitr starts with female-appearance filtering, automatic labeling, and the face classifier for both media types. The popup shows protection, media switches, Cover area, Advanced segmentation, and separate **Images** / **Videos** appearance tabs. **Pause on this site** adds the current domain to exceptions. Open **All settings** for a full-page view organized into Coverage, Detection, Performance, Diagnostics, and Websites. Website-list edits apply when you click **Save websites**.
 5. After rebuilding, click **Reload** on the extension page and refresh the website tab. Confirm the version shown in **All settings** matches `manifest.json`.

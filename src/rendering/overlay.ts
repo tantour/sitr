@@ -102,7 +102,7 @@ export class Overlay {
       const ctx = layer.getContext('2d');
       if (ctx) {
         const image = ctx.createImageData(width, height);
-        const colors = [[0, 0, 0], [240, 55, 65], [60, 140, 255], [155, 90, 235], [245, 210, 60], [225, 65, 190], [45, 195, 95], [45, 205, 215], [235, 155, 45]];
+        const colors = [[0, 0, 0], [240, 55, 65], [60, 140, 255], [155, 90, 235], [245, 210, 60], [225, 65, 190], [45, 195, 95], [45, 205, 215], [235, 155, 45], [255, 125, 100]];
         for (let p = 0; p < labels.length; p++) if (labels[p] > 0 && labels[p] < colors.length)
           image.data.set([...colors[labels[p]], 105], p * 4);
         ctx.putImageData(image, 0, 0);

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 Sitr contributors
 """Translate the pinned official BodyPix MobileNet dense heads to ONNX.
-No retraining; drops pose/offset branches, keeps person and 24-part logits.
+No retraining; keeps person/24-part logits plus original pose/short-offset heads.
 Inputs and output artifacts are pinned in models/artifacts.json; browser parity was checked.
 """
 from pathlib import Path
@@ -33,7 +33,7 @@ for variant in ['075','075-s8']:
             weights[w['name']]=a.reshape(w['shape'])
         assert offset==len(raw)
     defs={n['name']:n for n in m['modelTopology']['node']}
-    wanted=['float_segments','float_part_heatmaps'];needed=set()
+    wanted=['float_segments','float_part_heatmaps','float_heatmaps','float_short_offsets'];needed=set()
     def visit(name):
         name=name.split(':')[0]
         if name in needed:return
@@ -75,9 +75,9 @@ for variant in ['075','075-s8']:
                 nodes.append(h.make_node('Clip',[inp[0],'clip-min','clip-max'],[name],name=name));spatial[name]=spatial[inp[0]]
             else:raise ValueError(op)
         outside=(side-1)//(8 if variant.endswith('s8') else 16)+1
-        outs=[h.make_tensor_value_info('float_segments',T.FLOAT,[1,1,outside,outside]),h.make_tensor_value_info('float_part_heatmaps',T.FLOAT,[1,24,outside,outside])]
+        outs=[h.make_tensor_value_info(name,T.FLOAT,[1,channels,outside,outside]) for name,channels in zip(wanted,[1,24,17,34])]
         graph=h.make_graph(nodes,'BodyPix-MobileNet-dense-heads',[h.make_tensor_value_info('sub_2',T.FLOAT,[1,3,side,side])],outs,init)
-        model=h.make_model(graph,opset_imports=[h.make_opsetid('',17)],producer_name='Sitr BodyPix dense heads; official Google weights');model.ir_version=10
+        model=h.make_model(graph,opset_imports=[h.make_opsetid('',17)],producer_name='Sitr BodyPix dense and pose heads; official Google weights');model.ir_version=10
         onnx.checker.check_model(model)
         path=base/f'bodypix-mobilenet075-stride{model_stride}-{side}.onnx';onnx.save(model,path)
         manifest.append({'file':path.name,'bytes':path.stat().st_size,'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'heads':wanted,'nodes':len(nodes),'sourceJsonSha256':hashlib.sha256(source_json.read_bytes()).hexdigest()})

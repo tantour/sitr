@@ -5,6 +5,16 @@ let language: Language = 'en';
 
 // Source text is the key: controls, option values, and DOM structure stay unchanged.
 export const ARABIC: Readonly<Record<string, string>> = {
+  'Preparing protection…': 'جارٍ تجهيز الحماية…',
+  'Starting up…': 'جارٍ بدء التشغيل…',
+  'Preparation progress': 'تقدم التجهيز',
+  'Ready for images and videos': 'جاهز للصور والفيديوهات',
+  'Ready with limited features': 'جاهز مع بعض الميزات غير المتاحة',
+  'Preparation failed': 'تعذّر التجهيز',
+  'Cannot check readiness': 'تعذّر التحقق من الجاهزية',
+  'Some features are unavailable. Retry preparation.': 'بعض الميزات غير متاحة. أعد محاولة التجهيز.',
+  'Reopen Sitr or retry preparation.': 'أعد فتح ستر أو أعد محاولة التجهيز.',
+  '{completed} of {total} steps · {seconds} s': '{completed} من {total} خطوات · {seconds} ث',
   "Advanced segmentation": "التقسيم المتقدم",
   "Segmentation quality": "جودة التقسيم",
   "Fast": "سريع",
@@ -13,7 +23,9 @@ export const ARABIC: Readonly<Record<string, string>> = {
   "Images only · extra processing": "للصور فقط · معالجة إضافية",
   "Neck boundaries are approximate and can be imperfect.": "حدود الرقبة تقريبية وقد تكون غير دقيقة.",
   "Advanced segmentation is image-only and adds processing time. Quality is slower but gives finer detail. Overlapping parts can be misclassified.": "التقسيم المتقدم للصور فقط ويزيد وقت المعالجة. وضع الجودة أبطأ لكنه يوفّر تفاصيل أدق. قد يخطئ في تصنيف الأجزاء المتداخلة.",
-  "Advanced segmentation colors: torso red, upper arms blue, forearms purple, hands yellow, thighs pink, lower legs green, feet cyan, neck orange. Unrecognized skin follows its saved choice.": "ألوان التقسيم المتقدم: الجذع أحمر، العضدان أزرق، الساعدان بنفسجي، اليدان أصفر، الفخذان وردي، الساقان أخضر، القدمان سماوي، والرقبة برتقالي. تتبع البشرة غير المعروفة اختيارها المحفوظ.",
+  "Advanced segmentation colors: torso red, groin coral, upper arms blue, forearms purple, hands yellow, thighs pink, lower legs green, feet cyan, neck orange. Unrecognized skin follows its saved choice.": "ألوان التقسيم المتقدم: الجذع أحمر، منطقة الحوض مرجانية، العضدان أزرق، الساعدان بنفسجي، اليدان أصفر، الفخذان وردي، الساقان أخضر، القدمان سماوي، والرقبة برتقالي. تتبع البشرة غير المعروفة اختيارها المحفوظ.",
+  'Groin (pelvis)': 'منطقة العانة (الحوض)',
+  'Only exposed skin is affected. The pelvis boundary is estimated from torso and legs.': 'تتأثر البشرة المكشوفة فقط. تُقدّر حدود الحوض من الجذع والساقين.',
 
   'Female': 'أنثى', 'Male': 'ذكر', 'Face': 'الوجه', 'Neck': 'الرقبة', 'Hide': 'إخفاء', 'Pixelate': 'تمويه مربّع',
   'BodyPix quality': 'جودة BodyPix', 'Off': 'متوقف', 'Off · body skin together': 'متوقف · بشرة الجسم معًا',

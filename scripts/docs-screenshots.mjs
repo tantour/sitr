@@ -23,6 +23,10 @@ const uiImages = {
   'person-editor-ar-light.png': 'popup-ar-light.png',
   'person-editor-desktop.png': 'settings-desktop.png',
   'person-editor-ar-narrow.png': 'settings-ar.png',
+  'person-editor-groin.png': 'popup-groin.png',
+  'startup-progress-en.png': 'startup-progress.png',
+  'startup-ready-en.png': 'startup-ready.png',
+  'startup-progress-ar-dark.png': 'startup-progress-ar-dark.png',
 };
 for (const [source, target] of Object.entries(uiImages))
   await cp(resolve(root, '.impeccable/review', source), resolve(root, 'docs/images', target));
@@ -43,7 +47,7 @@ try {
   await page.goto(new URL('popup.html', worker.url()).href);
   await page.waitForFunction(() => !document.body.classList.contains('loading'));
   await page.evaluate(async () => {
-    const hidden = () => ({ skin: Object.fromEntries(['torso','upper-arms','forearms','hands','thighs','lower-legs','feet','neck'].map(area => [area,'hide'])),
+    const hidden = () => ({ skin: Object.fromEntries(['torso','upper-arms','forearms','hands','thighs','lower-legs','feet','neck','groin'].map(area => [area,'hide'])),
       hair: 'hide', otherSkin: 'hide', face: 'black', video: 'black' });
     const result = await chrome.runtime.sendMessage({ type: 'set-settings', patch: {
       personPolicies: { female: hidden(), male: hidden() }, imageCoverage: 'whole-body', imageWholeBodyEffect: 'black', automaticGender: false } });
