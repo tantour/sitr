@@ -18,7 +18,7 @@ const observation = (label: TrackObservation['label'], usable = true): TrackObse
 describe('optional image body-region policies', () => {
   it('migrates old settings with the feature off and validates independent allowlists', () => {
     expect(normalizeSettings({ schemaVersion: 16 }).imageBodyRegionMode).toBe('off');
-    const parsed = normalizeSettings({ imageBodyRegionMode: 'bad', imageFemaleAllowedRegions: ['thighs', 'thighs', 'belly'], imageMaleAllowedRegions: 'torso' });
+    const parsed = normalizeSettings({ imageBodyRegionMode: 'bad', imageFemaleAllowedRegions: ['thighs', 'thighs', 'invalid'], imageMaleAllowedRegions: 'torso' });
     expect(parsed.schemaVersion).toBe(20); expect(parsed.imageBodyRegionMode).toBe('off');
     expect(parsed.imageFemaleAllowedRegions).toEqual(['thighs']); expect(parsed.imageMaleAllowedRegions).toEqual([]);
   });

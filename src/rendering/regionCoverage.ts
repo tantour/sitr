@@ -5,11 +5,13 @@ import type { Track, TrackObservation } from '../state/contracts';
 import { hasImageCoverage, policyFor, skinHidden } from '../config/personPolicy';
 import { personSelected, selectedMask } from '../rules/evaluate';
 import { dilate, pruneIslands, type Composition } from './compositor';
+import { partThresholdCoverage } from './partThreshold';
 
 /** Expand hidden regions, then clip expansion against explicitly shown regions.
  * Original coverage from another person always wins at a real overlap. */
 export function regionCoverage(composition: Composition, tracks: Track[], settings: Settings,
-  side: number, regions?: Uint8Array): Uint8Array {
+  side: number, regions?: Uint8Array,
+  threshold = partThresholdCoverage(composition.observations, settings, regions, side)?.mask): Uint8Array {
   const core = composition.unassignedMask.slice(), visible = new Uint8Array(side * side);
   const exempt = new Uint8Array(side * side);
   composition.observations.forEach((person: TrackObservation, index) => {
@@ -30,5 +32,8 @@ export function regionCoverage(composition: Composition, tracks: Track[], settin
   const expanded = dilate(pruneIslands(core, side, side), side, side, settings.imageExpansion);
   const exemptEdge = dilate(exempt, side, side, settings.imageExpansion + 2);
   for (let p = 0; p < expanded.length; p++) if (!core[p] && (visible[p] || exemptEdge[p])) expanded[p] = 0;
+  if (threshold) {
+    for (let p = 0; p < expanded.length; p++) if (threshold[p]) expanded[p] = 255;
+  }
   return expanded;
 }

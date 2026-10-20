@@ -72,7 +72,8 @@
                       <g data-person-area="face" role="button" tabindex="0"><path d="M82 35Q99 22 118 34L117 52Q112 71 100 72Q86 71 81 52Z"/></g>
                       <g data-person-area="body" role="button" tabindex="0"><path d="M90 71L110 71L114 85L135 92Q150 95 154 111L181 213L187 235Q185 252 174 249L167 235L169 220L135 126L126 165L138 186L139 240L136 359L153 377L152 384Q133 387 120 378L121 359L111 280L104 242L100 215L96 242L89 280L79 359L80 378Q67 387 48 384L47 377L64 359L61 240L62 186L74 165L65 126L31 220L33 235L26 249Q15 252 13 235L19 213L46 111Q50 95 65 92L86 85Z"/></g>
                       <g data-person-area="neck" role="button" tabindex="0"><path d="M90 71L110 71L114 85Q100 95 86 85Z"/></g>
-                      <g data-person-area="torso" role="button" tabindex="0"><path d="M83 86Q100 97 117 86L133 94L132 137L126 164Q100 176 74 164L68 137L67 94Z"/></g>
+                      <g data-person-area="chest" role="button" tabindex="0"><path d="M83 86Q100 97 117 86L133 94L132 128L68 128L67 94Z"/></g>
+                      <g data-person-area="belly" role="button" tabindex="0"><path d="M68 128L132 128L132 137L126 164Q100 176 74 164L68 137Z"/></g>
                       <g data-person-area="groin" role="button" tabindex="0"><path d="M75 168Q100 180 125 168L132 185L112 201L100 219L88 201L68 185Z"/></g>
                       <g data-person-area="upper-arms" role="button" tabindex="0"><path d="M65 92Q50 95 46 111L32 158L49 165L66 121Z"/><path d="M135 92Q150 95 154 111L168 158L151 165L134 121Z"/></g>
                       <g data-person-area="forearms" role="button" tabindex="0"><path d="M31 161L48 168L34 218L19 213Z"/><path d="M169 161L152 168L166 218L181 213Z"/></g>
@@ -84,7 +85,7 @@
                     <div class="person-area-controls">
                       <label for="personAreaSelect" class="area-picker-label">Choose area</label>
                       <select id="personAreaSelect" aria-label="Choose area">
-                        <option value="face">Face</option><option value="hair">Hair</option><option value="body">Body skin</option><option value="neck">Neck</option><option value="torso">Torso (chest and belly)</option><option value="groin">Groin (pelvis)</option><option value="upper-arms">Upper arms</option><option value="forearms">Forearms</option><option value="hands">Hands</option><option value="thighs">Thighs</option><option value="lower-legs">Lower legs</option><option value="feet">Feet</option><option value="other-skin">Unrecognized skin</option>
+                        <option value="face">Face</option><option value="hair">Hair</option><option value="body">Body skin</option><option value="neck">Neck</option><option value="chest">Chest</option><option value="belly">Belly</option><option value="torso">Unresolved torso</option><option value="groin">Groin (pelvis)</option><option value="upper-arms">Upper arms</option><option value="forearms">Forearms</option><option value="hands">Hands</option><option value="thighs">Thighs</option><option value="lower-legs">Lower legs</option><option value="feet">Feet</option><option value="other-skin">Unrecognized skin</option>
                       </select>
                       <h3 id="personAreaTitle">Face</h3><p id="personCurrentAction" class="current-area-action"></p>
                       <div class="area-actions" role="group" aria-label="Area action">
@@ -95,12 +96,25 @@
         <label class="check-option"><input id="imageFaceEffectGrayscale" type="checkbox"> Grayscale face effect</label>
       </div>
                       <p id="personAreaHelp" class="setting-hint"></p>
+                      <div id="partThresholdControls" hidden>
+                        <label for="partThresholdTarget">Part threshold · images only</label>
+                        <select id="partThresholdTarget"><option value="off">Off</option><option value="part">Hide entire part</option><option value="body">Hide entire body</option></select>
+                        <div id="partThresholdPercentControl" hidden>
+                          <label for="partThresholdPercent">Skin above (%)</label>
+                          <input id="partThresholdPercent" type="number" min="0" max="100" step="1" value="50" aria-describedby="partThresholdHelp">
+                        </div>
+                        <p id="partThresholdHelp" class="setting-hint">Skin is measured against this part including clothes. The rule adds coverage when exceeded; Show/Hide still applies.</p>
+                        <div id="partThresholdFaceControl" hidden>
+                          <label for="partThresholdFace">Face when body threshold triggers</label>
+                          <select id="partThresholdFace"><option value="black">Black</option><option value="show">Show</option></select>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
                 <details id="imageAdvancedOptions" class="effect-details image-advanced"><summary>Image options</summary>
                   <p class="setting-hint">Advanced segmentation is image-only and adds processing time. Quality is slower but gives finer detail. Overlapping parts can be misclassified.</p>
-                  <p class="setting-hint">Torso includes chest and belly. Unrecognized skin has its own choice in the area menu.</p>
+                  <p class="setting-hint">Chest and belly follow body orientation. Unrecognized skin has its own choice in the area menu.</p>
                   <p id="wholeBodyOverrideHelp" class="setting-hint" hidden>Whole-body mode covers the silhouette of people with hidden areas. Choose Chosen areas to use the diagram literally.</p>
       <div id="imageWholeBodyControls" hidden>
         <label class="setting-field">Body effect <select id="imageWholeBodyEffect"><option value="black">Black</option><option value="blur">Blur</option><option value="checkerboard">Checkerboard blur</option></select></label>
@@ -115,13 +129,44 @@
               <section id="videoPanel" class="appearance-group" role="tabpanel" aria-labelledby="videosTab" tabindex="0" hidden>
                 <h2 class="settings-only">Video appearance</h2>
                 <p id="videosDisabled" class="media-disabled" hidden>Video protection is off. Turn on Videos above to apply these settings.</p>
-                <label class="setting-field">Female <select id="videoPolicy-female"><option value="show">Show</option><option value="black">Black</option><option value="blur">Blur</option><option value="checkerboard">Pixelate</option></select></label>
-                <label class="setting-field">Male <select id="videoPolicy-male"><option value="show">Show</option><option value="black">Black</option><option value="blur">Blur</option><option value="checkerboard">Pixelate</option></select></label>
+                <div class="bodypix-controls">
+                  <label class="bodypix-toggle"><input id="advancedVideoMode" type="checkbox" aria-describedby="advancedVideoCost"><span><strong>Advanced video mode</strong><small id="advancedVideoCost">Heavy on performance</small></span></label>
+                </div>
+                <div id="videoEditor" class="person-editor video-editor">
+                  <div class="gender-tabs" role="tablist" aria-label="Video gender policies">
+                    <button id="videoFemaleTab" data-video-gender="female" type="button" role="tab" aria-selected="true" aria-controls="videoPolicyPanel">Female</button>
+                    <button id="videoMaleTab" data-video-gender="male" type="button" role="tab" aria-selected="false" aria-controls="videoPolicyPanel" tabindex="-1">Male</button>
+                  </div>
+                  <p id="videoPolicySummary" class="setting-hint"></p>
+                  <div id="videoAreaReset" class="person-reset"><button id="showAllVideoAreas" type="button">Show all</button><button id="hideAllVideoAreas" type="button">Hide all</button><span class="diagram-legend">Outlined: show · Filled: cover</span></div>
+                  <div id="videoPolicyPanel" class="person-policy-panel" role="tabpanel" aria-labelledby="videoFemaleTab">
+                    <svg class="person-diagram" viewBox="0 0 200 400" role="group" aria-label="Choose an area on the person"><g data-video-area="body" role="button" tabindex="0"><path d="M90 71L110 71L114 85L135 92Q150 95 154 111L181 213L187 235Q185 252 174 249L167 235L169 220L135 126L126 165L138 186L139 240L136 359L153 377L152 384Q133 387 120 378L121 359L111 280L104 242L100 215L96 242L89 280L79 359L80 378Q67 387 48 384L47 377L64 359L61 240L62 186L74 165L65 126L31 220L33 235L26 249Q15 252 13 235L19 213L46 111Q50 95 65 92L86 85Z"/></g>
+<g data-video-area="face" role="button" tabindex="0"><path d="M82 35Q99 22 118 34L117 52Q112 71 100 72Q86 71 81 52Z"/></g>
+<g data-video-area="hair" role="button" tabindex="0"><path d="M75 41C71 8 91 7 100 7C121 7 132 21 125 43L117 29C108 33 97 25 84 34L82 44Z"/></g>
+<g data-video-area="whole" role="button" tabindex="0"><path d="M90 71L110 71L114 85L135 92Q150 95 154 111L181 213L187 235Q185 252 174 249L167 235L169 220L135 126L126 165L138 186L139 240L136 359L153 377L152 384Q133 387 120 378L121 359L111 280L104 242L100 215L96 242L89 280L79 359L80 378Q67 387 48 384L47 377L64 359L61 240L62 186L74 165L65 126L31 220L33 235L26 249Q15 252 13 235L19 213L46 111Q50 95 65 92L86 85Z"/><path d="M82 35Q99 22 118 34L117 52Q112 71 100 72Q86 71 81 52Z"/><path d="M75 41C71 8 91 7 100 7C121 7 132 21 125 43L117 29C108 33 97 25 84 34L82 44Z"/></g></svg>
+                    <div class="person-area-controls">
+                      <label id="videoAreaLabel" for="videoAreaSelect" class="area-picker-label">Choose area</label>
+                      <select id="videoAreaSelect" aria-label="Choose area"><option value="body">Body skin</option><option value="face">Face</option><option value="hair">Hair</option></select>
+                      <h3 id="videoAreaTitle">Whole body</h3><p id="videoCurrentAction" class="current-area-action"></p>
+                      <div class="area-actions" role="group" aria-label="Area action">
+                        <button data-video-action="show" type="button">Show</button><button data-video-action="hide" type="button">Hide</button><button data-video-action="black" type="button">Black</button><button data-video-action="blur" type="button">Blur</button><button data-video-action="checkerboard" type="button">Pixelate</button>
+                      </div>
+                      <p id="videoAreaHelp" class="setting-hint"></p>
+                    </div>
+                  </div>
+                </div>
+                <div id="advancedVideoControls" hidden>
+                  <label class="range-field">Video skin mask expansion <output id="videoSkinExpansionValue"></output><input id="videoSkinExpansion" type="range" min="0" max="24" step="1"></label>
+                  <p class="setting-hint">Expansion applies to hidden skin, face and hair. Shown areas stay open. More expansion covers nearby clothing.</p>
+                </div>
+                <div id="standardVideoControls">
       <details id="videoEffectOptions" class="effect-details" hidden><summary>Adjust video effect</summary>
         <label class="range-field">Effect strength <output id="videoEffectIntensityValue"></output><input id="videoEffectIntensity" type="range" min="8" max="64" step="1"></label>
         <label class="check-option"><input id="videoEffectGrayscale" type="checkbox"> Grayscale effect</label>
       </details>
                 <p class="setting-hint">Videos cover the whole person, including the face.</p>
+                </div>
+                <details class="effect-details video-mode-details"><summary>About advanced video mode</summary><p id="advancedVideoHelp" class="setting-hint">Heavy on performance: adds MediaPipe to the selected person detector on every analyzed video frame. Skin, face and hair share one model pass. No body-part segmentation.</p></details>
               </section>
             </div>
           </section>
@@ -144,7 +189,7 @@
     <label>Playback <select id="videoPlayback"><option value="smooth">Smooth</option><option value="strict">Strict</option></select></label>
     <label>Person detector <select id="videoDetector"><option value="segment">YOLO silhouette</option><option value="fast-box">Fast person boxes</option></select></label>
     <p class="muted">Fast boxes use a 256 × 256 detection model. They run faster but cover rectangular areas around people.</p>
-    <label>Video mask expansion <output id="videoExpansionValue"></output><input id="videoExpansion" type="range" min="0" max="24" step="1" aria-describedby="expansionHelp"></label>
+    <label id="standardVideoExpansionControl">Video mask expansion <output id="videoExpansionValue"></output><input id="videoExpansion" type="range" min="0" max="24" step="1" aria-describedby="expansionHelp"></label>
     <p id="videoCoverageHelp" class="muted">Video covers selected people's full silhouettes, including faces. Fast motion can still outrun a mask.</p>
   </fieldset>
   <p id="expansionHelp" class="muted">Expansion adds a margin in analysis pixels. Larger values cover more nearby area.</p>
@@ -166,7 +211,7 @@
 <section class="settings-panel settings-only" data-settings-panel="diagnostics" hidden><h2>Diagnostics</h2><div class="tech-body">
   <label id="faceAssociationModeControl">Face/person matching <select id="faceAssociationMode"><option value="overlap">Overlap score (stricter)</option><option value="center">Face-box center point</option></select></label>
   <label><input id="debugOverlay" type="checkbox"> Show AI debug outlines, face boxes, and gender estimates</label>
-  <p class="muted">Advanced segmentation colors: torso red, groin coral, upper arms blue, forearms purple, hands yellow, thighs pink, lower legs green, feet cyan, neck orange. Unrecognized skin follows its saved choice.</p>
+  <p class="muted">Advanced segmentation colors: chest red, belly amber, unresolved torso red, groin coral, upper arms blue, forearms purple, hands yellow, thighs pink, lower legs green, feet cyan, neck orange. Unrecognized skin follows its saved choice.</p>
   <label><input id="faceAssociation" type="checkbox"> Face association diagnostics</label>
   <details>
     <summary>Advanced AI thresholds</summary>

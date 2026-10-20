@@ -6,7 +6,7 @@ import { captureSquare, decodeImageBlob, sourceIsStatic } from '../media/capture
 import { FrameMotion } from '../media/frameMotionClient';
 import { Overlay } from '../rendering/overlay';
 import { imageAnalysisKey } from '../config/imageAnalysis';
-import { hasFaceEffects } from '../config/personPolicy';
+import { hasFaceEffects, hasThresholdFaceOpenings } from '../config/personPolicy';
 import { BackgroundImages, type BackgroundSurface } from '../media/backgroundImages';
 import { SharedImageWork } from '../media/sharedImageWork';
 import { imageLookAheadPx, imageWorkRange } from '../media/imageWorkRange';
@@ -51,20 +51,20 @@ function prepareEngine(kind: 'image' | 'video' = 'image'): void {
   if (!protectedSite()) return;
   const threads = resolveOnnxThreads(settings.onnxThreads, navigator.hardwareConcurrency);
   const size = resolvePersonSize(settings, kind);
-  const key = `${threads}:${kind}:${size}:${kind === 'image' ? settings.imageCoverage : settings.videoDetector}`;
+  const key = `${threads}:${kind}:${size}:${kind === 'image' ? settings.imageCoverage : `${settings.videoDetector}:${settings.advancedVideoMode}`}`;
   if (preparingEngine && preparingKey === key) return;
   const prior = preparingEngine;
   preparingKey = key;
   preparingEngine = (prior?.catch(() => {}) ?? Promise.resolve()).then(async () => {
     await ensureOffscreen();
     await send({ type: 'prepare-engine', size, kind, detector: kind === 'video' ? settings.videoDetector : 'segment',
-      semantic: kind === 'image',
+      semantic: kind === 'image' || settings.advancedVideoMode,
       faces: (settings.automaticGender && (kind === 'image' ? settings.imageGenderModel : settings.videoGenderModel).startsWith('face')) ||
         settings.faceAssociation || settings.debugOverlay ||
         (kind === 'image' && (['face', 'either', 'both'].includes(settings.imageDetectionGate) ||
           (settings.imageSkinThresholdEnabled && !settings.imageSkinThresholdIncludeFace) ||
           settings.imageCoverage === 'whole-body' ||
-          (settings.imageCoverage === 'regions' && hasFaceEffects(settings)))),
+          (settings.imageCoverage === 'regions' && (hasFaceEffects(settings) || hasThresholdFaceOpenings(settings))))),
       gender: settings.automaticGender, threads });
   }).catch(() => { preparingEngine = undefined; });
 }
@@ -99,7 +99,7 @@ async function analyzeImageSource(node: HTMLImageElement, source: string, curren
     current.faceAssociation || current.debugOverlay ||
     ['face', 'either', 'both'].includes(current.imageDetectionGate) ||
     current.imageCoverage === 'whole-body' ||
-    (current.imageCoverage === 'regions' && hasFaceEffects(current))
+    (current.imageCoverage === 'regions' && (hasFaceEffects(current) || hasThresholdFaceOpenings(current)))
     ? current.faceCaptureSize : undefined;
   let rgba: Uint8Array | undefined;
   let faceRgba: Uint8Array | undefined;
@@ -556,7 +556,7 @@ class MediaController {
     if (meetingPage && !release) {
       video.dataset.localMediaCensorStatus = 'queued'; this.holdVideoMaskOrProtect(); return;
     }
-    const rate = settings.videoDetector === 'fast-box' ? 12 : ENGINE.modes[settings.performance].initialHz;
+    const rate = settings.videoDetector === 'fast-box' && !settings.advancedVideoMode ? 12 : ENGINE.modes[settings.performance].initialHz;
     this.nextCaptureAt = Date.now() + 1000 / rate;
     try {
       // Some decoders initially return a blank frame before reporting taint.
@@ -936,7 +936,7 @@ chrome.storage.onChanged.addListener(changes => {
   }
   const faceSettingsChanged = (['imageCoverage', 'imageDetectionGate', 'imageRegionFaceEffect', 'faceAssociationMode', 'automaticGender', 'imageGenderModel', 'videoGenderModel',
     'faceAssociation', 'debugOverlay', 'onnxThreads',
-    'yoloImageSize', 'yoloVideoSize', 'videoDetector', 'yunetSize', 'faceCaptureSize', 'performance',
+    'yoloImageSize', 'yoloVideoSize', 'videoDetector', 'advancedVideoMode', 'yunetSize', 'faceCaptureSize', 'performance',
     'faceDetectionConfidence', 'minFaceSizePx', 'genderConfidence', 'smallFaceCutoffPx', 'smallFaceConfidence',
     'faceCoverage', 'faceMargin', 'centerMaskConfidence', 'yoloConfidence'] as const).some(field => previous[field] !== settings[field]);
   const imageSettingsChanged = imageAnalysisKey(previous) !== imageAnalysisKey(settings);

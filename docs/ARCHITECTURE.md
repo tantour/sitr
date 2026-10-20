@@ -9,7 +9,7 @@ flowchart LR
   Capture --> Host[Offscreen scheduler]
   Host --> Vision[Local vision worker]
   Vision --> Person[YOLO person masks or boxes]
-  Vision --> Semantic[MediaPipe still-image regions]
+  Vision --> Semantic[MediaPipe images / optional video regions]
   Vision --> Anatomy[Optional image-only BodyPix anatomy]
   Vision --> Appearance[YuNet / FastFace / body models]
   Person --> Rules[Tracking and coverage rules]
@@ -45,17 +45,22 @@ The 64 MiB frame cache budget is separate from resident model memory.
 
 YOLO WebGPU graphs retain FP32 weights and move TopK selection to TypeScript.
 Original ONNX graphs are packaged for WASM fallback. MediaPipe runs for still
-images; video avoids that stage. YuNet and FastFace use WASM. Optional Intel and
+images and, when Advanced video mode is enabled, analyzed video frames. Standard
+video skips that stage. Skin, face and hair share the same semantic pass. YuNet and FastFace use WASM. Optional Intel and
 Paddle models classify person crops. The rules choose selected/unclassified
-people, per-gender area policies, and face effects. Optional BodyPix maps label
-only MediaPipe body-skin pixels. Original pose heads anchor groin and upper-thigh
-geometry; video skips anatomy inference. Expansion clips against shown regions, and fully shown people suppress
-semantic border masks. Face layers carry each gender's effect and strength. Removed
-skin-exposure rules are disabled during normalization. Tracking uses
+people, per-gender area policies, and face effects. Optional BodyPix maps label anatomy through clothing, while ordinary area
+coverage remains gated to MediaPipe body skin. The clothed area supplies the
+denominator for image part thresholds. Original pose heads anchor groin and upper-thigh
+geometry and the chest/belly half cut; video skips anatomy inference. Expansion clips against shown regions, and fully shown people suppress
+semantic border masks. Face layers carry each gender's effect and strength. Legacy global
+exposure rules are disabled during normalization. New per-part rules escalate to
+a whole part or body; body rules reopen or black the face after expansion. Tracking uses
 temporary continuity evidence and resets on scene changes.
 
 Video uses sampled inference with local motion-based mask translation between
-analyses, not inference on every displayed frame. The mask renderer handles
+analyses, not inference on every displayed frame. Advanced mode returns per-track
+semantic masks for the same motion renderer, with independent per-gender skin,
+face and hair actions. Its separate expansion respects explicitly shown areas. The mask renderer handles
 letterboxing, object-fit, effects, diagnostic outlines, and geometry updates.
 CSS backgrounds use a censored image copy with the original layout rules.
 

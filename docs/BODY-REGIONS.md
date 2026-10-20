@@ -11,7 +11,7 @@ choose **Hide**. Hair, face, neck, torso, arms, hands, lower legs and feet remai
 shown. **Show all** also shows unrecognized skin. Female choices are independent.
 **Groin (pelvis)** is a separate area on the diagram and in the area menu. To
 cover the pelvis and upper thighs without the chest/belly, hide **Groin** and
-**Thighs**, leaving **Torso** shown. Saved groin choices initially inherit the
+**Thighs**, leaving **Chest** and **Belly** shown. Saved groin choices initially inherit the
 previous torso action, including Show all; either can then be changed independently.
 There is no global Female/Male/Everyone/No one selector. Videos have separate
 Show/Black/Blur/Pixelate choices for each gender and cover the whole person.
@@ -31,8 +31,11 @@ pixels. Its original hip/shoulder landmarks predict the groin through clothing,
 while hip-to-knee segments repair upper thighs mislabelled as torso or lower legs.
 The pelvis follows bent/crossed legs and ends above the learned knees. Instance
 masks isolate each person's evidence; ambiguous overlaps and uncertain landmarks
-are rejected. Clothing remains excluded from the output map. Torso combines chest
-and belly. Neck uses BodyPix head labels that
+are rejected. The anatomy map also labels clothing for part-area measurements; ordinary Hide
+still covers skin only. Chest and belly split the torso halfway along each person’s
+shoulder-to-hip axis, using dense anatomy when pose landmarks are unavailable. This
+follows sideways, lying and upside-down bodies. Missing or ambiguous anatomy keeps
+the **Unresolved torso** fallback rather than guessing a screen-horizontal cut. Neck uses BodyPix head labels that
 MediaPipe considers body skin; it is an estimate, not a dedicated neck class.
 Overlapping parts and skin classification can be wrong.
 If reliable pelvis landmarks are unavailable (for example small people or torso-
@@ -51,13 +54,28 @@ do not receive semantic border masks near their instance. Genuine hidden
 pixels from another person at an overlap retain coverage. **Cover area** is above
 the editor: Chosen areas uses skin choices; Whole body includes clothing and
 keeps face effects separate. Body-area actions return coverage to Chosen areas;
-face and hair choices preserve the current mode. Skin-exposure rules have been
-removed and existing saved rules are disabled.
+face and hair choices preserve the current mode. Old global skin-exposure rules
+remain disabled.
+
+For a conditional rule, enable Advanced segmentation, select a part, then use
+**Part threshold · images only**. Choose **Hide entire part** or **Hide entire body**
+and enter **Skin above (%)**, for example 50. Each gender and part saves its own
+rule. The fraction is exposed body skin divided by all confidently owned pixels
+of that estimated part, including clothing. Exactly 50% does not trigger a 50% rule.
+Rules add black coverage to existing choices. For coverage only above the threshold,
+choose **Show** for the part first. A part rule includes clothing in that part; a
+body rule covers the entire owned silhouette. **Face when body threshold triggers**
+chooses Black (default) or Show. Show opens the semantic face and uniquely associated
+face box after expansion and temporarily overrides the normal face effect. If
+multiple body rules trigger, Black wins. Off removes the selected rule; Show all / Hide all
+or turning segmentation off clears the affected rules. Uncertain people or missing
+maps do not trigger thresholds. Small parts need at least four owned pixels.
+These are estimates of visible parts, not hidden anatomy or clinical skin measurements.
 
 Existing choices are migrated when opening the new editor. Old all-body-area
 exemptions also migrate hair and neck to Show. Policy settings use
 `personPolicies.female` and `.male`, each with `skin`, `otherSkin`, `hair`,
-`face`, optional `faceStrength`, and `video`. Existing strengths inherit the previous shared value until edited. Legacy fields remain readable for older automation clients.
+`face`, optional `faceStrength`, optional `partThresholds` (area, percent, target), and `video`. Existing strengths inherit the previous shared value until edited. Legacy fields remain readable for older automation clients.
 
 The models add about 10.00 MB to the distribution. Only the chosen variant loads
 when image skin needs it; both reuse ONNX Runtime Web with WebGPU and WASM
@@ -110,6 +128,6 @@ documents conversion and source/output hashes.
 Run `node scripts/groin-probe.mjs` for standing, crossed-leg, seated, multiple-
 person and torso-crop photographs and their mirrors, using both variants. The
 fixtures are fully clothed men; no underwear, swimwear or immodest images are
-used. Diagnostic maps probe clothed anatomy, while a separate normal skin-map
-pass checks that clothing pixels stay unlabelled. Synthetic tests verify skin
+used. The anatomy map labels clothing for threshold measurements, while the
+normal skin policy is checked to leave clothing uncovered. Synthetic tests verify skin
 masking and independent policies. Reports/diagnostic PNGs are saved under `.cache/`.

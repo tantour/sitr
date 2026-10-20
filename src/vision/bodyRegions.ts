@@ -74,7 +74,7 @@ export class BodyPixRegionSegmenter {
           !(heatmaps instanceof Float32Array) || !(offsets instanceof Float32Array)) throw new Error('BodyPix output precision mismatch');
       const decodeAt = performance.now();
       const map = decodeBodyRegions(parts, foreground, this.grid, semantic, side, people,
-        { heatmaps, offsets, inputSide: this.side }, this.geometry);
+        { heatmaps, offsets, inputSide: this.side }, this.geometry, true);
       this.lastTimings = { preprocess: runAt - started, run: decodeAt - runAt, decode: performance.now() - decodeAt };
       return map;
     } finally { for (const tensor of Object.values(outputs)) tensor.dispose(); }

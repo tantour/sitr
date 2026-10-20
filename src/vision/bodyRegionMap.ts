@@ -3,6 +3,7 @@
 import { BODY_REGIONS, type BodyRegion, type Settings } from '../config/settings';
 import type { TrackObservation } from '../state/contracts';
 import { hasBodyCoverage, policyFor } from '../config/personPolicy';
+import { splitTorso, torsoAxes } from './torso';
 import { estimatePelvis, estimatePosePelvis, pelvicRegion, regionOwner, type RegionPerson, type PoseHeads, type PelvisEstimate } from './pelvis';
 
 /** Official channel order: left upper front/back, right upper front/back,
@@ -24,22 +25,26 @@ export function allowedRegionIds(observation: Pick<TrackObservation, 'label' | '
   }
   if (!observation.labelUsable || observation.label === 'unknown') return allowed;
   const regions = observation.label === 'female' ? settings.imageFemaleAllowedRegions : settings.imageMaleAllowedRegions;
-  for (const region of regions) allowed[BODY_REGIONS.indexOf(region) + 1] = 1;
+  for (const region of regions) {
+    allowed[BODY_REGIONS.indexOf(region) + 1] = 1;
+    if (region === 'torso') { allowed[10] = 1; allowed[11] = 1; }
+  }
   return allowed;
 }
 export function regionName(id: number): BodyRegion | undefined { return BODY_REGIONS[id - 1]; }
 
 /** Bilinear interpolation matches the original graph's align-corners upsampling.
- * Decode only skin, retaining unknown regions for conservative coverage. */
+ * The runtime requests clothing too for the part-threshold denominator.
+ * Ordinary skin coverage still gates this anatomy map with semantic skin. */
 export function decodeBodyRegions(parts: Float32Array, foreground: Float32Array, grid: number,
   semantic: Uint8Array, side: number, people: readonly RegionPerson[] = [], pose?: PoseHeads,
-  geometry?: { pelvis: Array<PelvisEstimate | undefined> }): Uint8Array {
+  geometry?: { pelvis: Array<PelvisEstimate | undefined> }, includeClothing = false): Uint8Array {
   const plane = grid * grid;
   if (parts.length !== plane * 24 || foreground.length !== plane || semantic.length !== side * side || grid < 2 || side < 2)
     throw new Error('BodyPix output grid mismatch');
   const regions = new Uint8Array(semantic.length);
   // The existing dense heads predict anatomy through clothing. Keep a small
-  // confident grid for geometry; output remains strictly semantic body skin.
+  // confident grid for geometry, independently of exposed skin.
   const labels = new Uint8Array(plane);
   if (people.length) for (let p = 0; p < plane; p++) {
     if (!Number.isFinite(foreground[p]) || foreground[p] < 0) continue;
@@ -54,10 +59,11 @@ export function decodeBodyRegions(parts: Float32Array, foreground: Float32Array,
   }
   const dense = estimatePelvis(labels, grid, people);
   const pelvis = pose ? estimatePosePelvis(pose, grid, people, dense) : dense;
+  const axes = torsoAxes(labels, grid, people, pelvis.map((value, index) => value ?? dense[index]));
   if (geometry) geometry.pelvis = pelvis;
   for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) {
     const pixel = y * side + x;
-    if (semantic[pixel] !== 2) continue;
+    if (!includeClothing && semantic[pixel] !== 2) continue;
     const gx = x * (grid - 1) / (side - 1), gy = y * (grid - 1) / (side - 1);
     const x0 = Math.floor(gx), y0 = Math.floor(gy), x1 = Math.min(grid - 1, x0 + 1), y1 = Math.min(grid - 1, y0 + 1);
     const fx = gx - x0, fy = gy - y0;
@@ -76,10 +82,15 @@ export function decodeBodyRegions(parts: Float32Array, foreground: Float32Array,
       if (value > best) { best = value; label = part; }
     }
     if (label >= 0) {
+      // Head channels only identify neck where semantic body skin agrees;
+      // face and hair must not inflate the neck's threshold denominator.
+      if (label < 2 && semantic[pixel] !== 2) continue;
       const region = BODYPIX_REGION_IDS[label];
       const nx = x / (side - 1), ny = y / (side - 1);
-      regions[pixel] = region === 1 || region === 5 || region === 6
-        ? pelvicRegion(region, nx, ny, pelvis[regionOwner(people, nx, ny)]) : region;
+      const owner = regionOwner(people, nx, ny);
+      const refined = region === 1 || region === 5 || region === 6
+        ? pelvicRegion(region, nx, ny, pelvis[owner]) : region;
+      regions[pixel] = refined === 1 ? splitTorso(nx, ny, axes[owner]) : refined;
     }
   }
   return regions;

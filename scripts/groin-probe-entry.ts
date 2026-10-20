@@ -4,6 +4,9 @@
 import { BodyPixRegionSegmenter } from '../src/vision/bodyRegions';
 import { YoloPersonSegmenter } from '../src/vision/person';
 import { SelfieSemanticSegmenter } from '../src/vision/semantic';
+import { DEFAULT_SETTINGS } from '../src/config/settings';
+import { selectedMask } from '../src/rules/evaluate';
+import type { TrackObservation } from '../src/state/contracts';
 
 const people = new YoloPersonSegmenter(320, 'wasm', 2);
 const semantic = new SelfieSemanticSegmenter(false);
@@ -26,11 +29,16 @@ Object.assign(globalThis, { async groinProbe({ bytes, mode, backend, crop, mirro
   const rgba = new Uint8Array(ctx.getImageData(0, 0, side, side).data.buffer);
   const detections = await people.segment(rgba, .25);
   const categories = semantic.segment(rgba, side);
-  const actual = await model.segment(rgba, side, categories, detections);
+  const anatomy = await model.segment(rgba, side, categories, detections);
   const timing = model.getLastTimings();
-  // Diagnostic only: probe the existing dense predictions on fully clothed
-  // pixels, without changing the photograph or asserting skin is exposed.
-  const anatomy = await model.segment(rgba, side, new Uint8Array(side * side).fill(2), detections);
+  // Anatomy includes clothes for threshold denominators. Exercise the actual
+  // skin policy separately so a normal Hide cannot cover those clothes.
+  const observation: TrackObservation = { id: 'coverage', label: 'male', labelUsable: true, state: 'active',
+    box: { x: 0, y: 0, width: 1, height: 1 }, ownedMask: new Uint8Array(side * side).fill(255),
+    bodySkinMask: Uint8Array.from(categories, value => value === 2 ? 255 : 0),
+    hairMask: new Uint8Array(side * side), faceSkinMask: new Uint8Array(side * side),
+    exposure: { reliable: true, ratio: 0, ownedPixels: side * side, ambiguousFraction: 0 } };
+  const coverage = selectedMask(observation, { ...DEFAULT_SETTINGS, filter: 'both', hair: false, imageBodyRegionMode: mode }, anatomy);
   const sample = points.map(([x, y]) => {
     let px = Math.round(ox + (x - sx) * scale), py = Math.round(oy + (y - sy) * scale);
     if (mirror) px = side - 1 - px;
@@ -40,10 +48,10 @@ Object.assign(globalThis, { async groinProbe({ bytes, mode, backend, crop, mirro
     }
     return { x: px, y: py, label: anatomy[py * side + px], counts };
   });
-  let clothingPixels = 0, clothingLabelled = 0, actualGroin = 0;
-  for (let p = 0; p < actual.length; p++) {
-    if (categories[p] === 4) { clothingPixels++; if (actual[p]) clothingLabelled++; }
-    if (actual[p] === 9) actualGroin++;
+  let clothingPixels = 0, clothingLabelled = 0, clothingCovered = 0, actualGroin = 0;
+  for (let p = 0; p < anatomy.length; p++) {
+    if (categories[p] === 4) { clothingPixels++; if (anatomy[p]) clothingLabelled++; if (coverage[p]) clothingCovered++; }
+    if (categories[p] === 2 && anatomy[p] === 9) actualGroin++;
   }
   // Photograph + predicted pelvis/raised upper thighs for visual inspection.
   const diagnostic = new OffscreenCanvas(side, side), output = diagnostic.getContext('2d')!;
@@ -55,7 +63,7 @@ Object.assign(globalThis, { async groinProbe({ bytes, mode, backend, crop, mirro
   }
   output.putImageData(pixels, 0, 0);
   const png = new Uint8Array(await (await diagnostic.convertToBlob({ type: 'image/png' })).arrayBuffer());
-  return { people: detections.length, backend: model.getBackend(), timing, sample, clothingPixels, clothingLabelled, actualGroin,
+  return { people: detections.length, backend: model.getBackend(), timing, sample, clothingPixels, clothingLabelled, clothingCovered, actualGroin,
     geometry: model.getLastPelvisEstimates(),
     groinPixels: anatomy.filter(v => v === 9).length, png: Array.from(png) };
 } });

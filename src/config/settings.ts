@@ -18,17 +18,22 @@ export type FaceEffect = 'show' | WholeBodyEffect;
 export type ImageDetectionGate = 'any' | 'face' | 'person' | 'either' | 'both';
 export type BodyRegionMode = 'off' | 'faster' | 'finer';
 // Append new regions to preserve existing numeric model/debug IDs.
-export const BODY_REGIONS = ['torso', 'upper-arms', 'forearms', 'hands', 'thighs', 'lower-legs', 'feet', 'neck', 'groin'] as const;
+export const BODY_REGIONS = ['torso', 'upper-arms', 'forearms', 'hands', 'thighs', 'lower-legs', 'feet', 'neck', 'groin', 'chest', 'belly'] as const;
 export type BodyRegion = typeof BODY_REGIONS[number];
+export interface PartThreshold { area: BodyRegion; percent: number; target: 'part' | 'body'; face?: 'show' | 'black' }
 export type SkinAction = 'show' | 'hide';
 export type PersonArea = BodyRegion | 'hair' | 'face' | 'body' | 'other-skin';
 export interface PersonPolicy {
+  partThresholds?: PartThreshold[];
   skin: Record<BodyRegion, SkinAction>;
   otherSkin: SkinAction;
   hair: SkinAction;
   face: FaceEffect;
   faceStrength?: number;
   video: FaceEffect;
+  videoSkin?: SkinAction;
+  videoHair?: SkinAction;
+  videoFace?: SkinAction;
 }
 export type PersonPolicies = Record<'female' | 'male', PersonPolicy>;
 
@@ -40,6 +45,8 @@ export interface Settings {
   videos: boolean;
   videoPlayback: VideoPlayback;
   videoDetector: VideoDetector;
+  advancedVideoMode: boolean;
+  videoSkinExpansion: number;
   filter: FilterMode;
   /** Legacy fields remain readable; diagram policies take precedence once edited. */
   personPolicies?: PersonPolicies;
@@ -103,6 +110,8 @@ export const DEFAULT_SETTINGS: Settings = {
   videos: true,
   videoPlayback: 'smooth',
   videoDetector: 'segment',
+  advancedVideoMode: false,
+  videoSkinExpansion: 4,
   filter: 'female',
   imageUnknown: 'selected',
   videoUnknown: 'selected',
@@ -204,7 +213,14 @@ export function normalizeSettings(value: unknown): Settings {
       // The pelvis previously belonged to torso: inherit that saved action
       // until the user chooses groin explicitly, including old Show-all policies.
       policies[gender] = { skin: Object.fromEntries(BODY_REGIONS.map(area => [area, action(
-        area === 'groin' && value?.skin?.groin === undefined ? value?.skin?.torso : value?.skin?.[area])])) as PersonPolicy['skin'],
+        ['groin', 'chest', 'belly'].includes(area) && value?.skin?.[area] === undefined ? value?.skin?.torso : value?.skin?.[area])])) as PersonPolicy['skin'],
+        partThresholds: Array.isArray(value?.partThresholds) ? value.partThresholds.filter(rule => rule &&
+          BODY_REGIONS.includes(rule.area) && ['part', 'body'].includes(rule.target) && Number.isFinite(Number(rule.percent)))
+          .slice(0, 32).map(rule => ({ area: rule.area, target: rule.target, percent: Math.max(0, Math.min(100, Math.round(Number(rule.percent)))),
+            ...(rule.target === 'body' ? { face: rule.face === 'show' ? 'show' as const : 'black' as const } : {}) })) : [],
+        ...(value?.videoSkin === 'show' || value?.videoSkin === 'hide' ? { videoSkin: value.videoSkin } : {}),
+        ...(value?.videoHair === 'show' || value?.videoHair === 'hide' ? { videoHair: value.videoHair } : {}),
+        ...(value?.videoFace === 'show' || value?.videoFace === 'hide' ? { videoFace: value.videoFace } : {}),
         otherSkin: action(value?.otherSkin), hair: action(value?.hair), face: effect(value?.face), video: effect(value?.video),
         ...(value?.faceStrength !== undefined && Number.isFinite(Number(value.faceStrength))
           ? { faceStrength: Math.max(8, Math.min(64, Math.round(Number(value.faceStrength)))) } : {}) };
@@ -215,6 +231,7 @@ export function normalizeSettings(value: unknown): Settings {
   for (const field of ['imageFemaleAllowedRegions', 'imageMaleAllowedRegions'] as const) {
     const allowed = merged[field];
     merged[field] = Array.isArray(allowed) ? BODY_REGIONS.filter(region => allowed.includes(region) ||
+      ['chest', 'belly'].includes(region) && allowed.includes('torso') ||
       region === 'groin' && (raw.schemaVersion ?? 0) < 20 && allowed.includes('torso')) : [];
   }
   // Removed exposure rules must not survive invisibly in saved profiles.
@@ -238,6 +255,7 @@ export function normalizeSettings(value: unknown): Settings {
   delete (merged as Settings & { unknown?: string }).unknown;
   if (!['smooth', 'strict'].includes(merged.videoPlayback)) merged.videoPlayback = DEFAULT_SETTINGS.videoPlayback;
   if (!['segment', 'fast-box'].includes(merged.videoDetector)) merged.videoDetector = DEFAULT_SETTINGS.videoDetector;
+  merged.advancedVideoMode = raw.advancedVideoMode === true;
   for (const field of ['imageGenderModel', 'videoGenderModel'] as const)
     if (!['face', 'body-intel', 'body-paddle', 'face-intel', 'face-paddle'].includes(merged[field])) merged[field] = DEFAULT_SETTINGS[field];
   if (merged.imageCoverage === 'whole-body-face') merged.imageCoverage = 'whole-body';
@@ -261,7 +279,7 @@ export function normalizeSettings(value: unknown): Settings {
   merged.yunetSize = [256, 320, 416].includes(yunetSize) ? yunetSize as YunetResolution : 320;
   const faceCaptureSize = Number(merged.faceCaptureSize);
   merged.faceCaptureSize = [320, 416, 512, 640].includes(faceCaptureSize) ? faceCaptureSize as FaceCaptureResolution : 640;
-  for (const field of ['imageExpansion', 'videoExpansion'] as const) {
+  for (const field of ['imageExpansion', 'videoExpansion', 'videoSkinExpansion'] as const) {
     const value = Number(merged[field]);
     merged[field] = Number.isFinite(value) ? Math.max(0, Math.min(24, Math.round(value))) : DEFAULT_SETTINGS[field];
   }

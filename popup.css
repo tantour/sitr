@@ -194,7 +194,19 @@ body[data-view=settings] .interface-controls{margin-inline-start:auto}
 .person-diagram g:hover path{stroke-width:2.5}
 .person-area-controls{min-width:0;padding-top:8px}
 .area-picker-label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px}
-#personAreaSelect{width:100%;font-size:11px;padding-inline:5px}
+#personAreaSelect,#videoAreaSelect{width:100%;font-size:11px;padding-inline:5px}
+#partThresholdControls{border-top:1px solid var(--line);margin-top:16px;padding-top:12px}
+#partThresholdControls label{display:block;font-size:11px;margin-block:0 6px}
+#partThresholdControls select,#partThresholdControls input{width:100%;min-height:34px;font:inherit;box-sizing:border-box}
+#partThresholdControls input{padding:6px 9px;border:1px solid var(--field-border);border-radius:6px;background:var(--white);color:var(--ink-deep);caret-color:var(--sea);font-variant-numeric:tabular-nums}
+#partThresholdPercentControl{margin-top:12px}
+#partThresholdFaceControl{margin-top:12px}
+.video-editor{margin-top:16px}
+#advancedVideoControls{border-top:1px solid var(--line);padding-top:10px}
+.video-editor .person-policy-panel{grid-template-columns:minmax(90px,.8fr) minmax(0,1.2fr);gap:16px}
+.video-editor[data-mode=standard] .person-area-controls{padding-top:0}
+.video-editor[data-mode=standard] .person-area-controls h3{margin-top:0}
+.video-mode-details{margin-top:12px}
 .person-area-controls h3{font-size:16px;margin:19px 0 3px;line-height:1.35}
 .current-area-action{font-size:12px;color:var(--sea);margin-bottom:12px;font-weight:600}
 .area-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
@@ -205,10 +217,10 @@ body[data-view=settings] .interface-controls{margin-inline-start:auto}
 .person-reset button{font-size:11px;flex:none}
 .diagram-legend{font-size:10px;color:var(--muted);line-height:1.3}
 .image-advanced{border-top:1px solid var(--line);padding-top:10px}
-body[data-view=popup] #personPolicySummary{display:none}
+body[data-view=popup] #personPolicySummary,body[data-view=popup] #videoPolicySummary{display:none}
 body[data-view=settings] .appearance-columns{grid-template-columns:minmax(0,1.65fr) minmax(0,1fr)}
 body[data-view=settings] .person-diagram{height:280px}
-body[data-view=settings] #personAreaSelect{font-size:12px}
+body[data-view=settings] #personAreaSelect,body[data-view=settings] #videoAreaSelect{font-size:12px}
 body[data-view=settings] .person-policy-panel{gap:24px}
 body[data-view=settings] .person-area-controls h3{font-size:21px}
 body[data-view=settings] .person-reset button{font-size:12px}

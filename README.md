@@ -6,9 +6,9 @@
 
 Sitr is a Chrome extension that covers selected people in supported images and videos. Choose skin and hair coverage or whole-person coverage, use black masks, blur, or a pixelated mosaic, and tune images and videos separately. English and Arabic interfaces include light, dark, and system themes.
 
-**New in 0.5.1:** separate groin coverage, improved upper thighs, models prepared ahead of browsing, and visible startup progress. [See the update and screenshots](#what-changed-in-051).
+**New in 0.5.2:** per-part skin thresholds, separate chest and belly controls, optional advanced video masks, and a visual video editor. [See the update and screenshots](#what-changed-in-052).
 
-<img src="docs/images/popup.png" width="440" alt="Sitr 0.5.1 main controls: protection, media tabs, cover area, and Advanced segmentation">
+<img src="docs/images/popup.png" width="440" alt="Sitr 0.5.2 main controls: protection, media tabs, cover area, and Advanced segmentation">
 
 **Requires Chrome 148 or newer.** Sitr uses local AI estimates that can miss people, misclassify appearance, or leave parts of moving media uncovered. It does not guarantee that every unwanted image or video frame is hidden. [Supported media and limitations](#supported-media-and-limitations).
 
@@ -16,7 +16,7 @@ Sitr is a Chrome extension that covers selected people in supported images and v
 
 ### From a GitHub release
 
-1. Open [Sitr v0.5.1](https://github.com/tantour/sitr/releases/tag/v0.5.1) release page and download `sitr-0.5.1-chrome.zip` and `SHA256SUMS.txt`.
+1. Open [Sitr v0.5.2](https://github.com/tantour/sitr/releases/tag/v0.5.2) release page and download `sitr-0.5.2-chrome.zip` and `SHA256SUMS.txt`.
 2. Verify the ZIP's SHA-256 against the checksum file, then extract it into a permanent folder. Do not load the ZIP itself.
 3. Visit `chrome://extensions`, turn on **Developer mode**, and choose **Load unpacked**.
 4. Select the extracted folder containing `manifest.json`. Pin **Sitr** using Chrome's extensions menu.
@@ -32,8 +32,8 @@ Use **Node.js 22.12+**, npm, and Git. Model binaries live in release assets to k
 
 ```sh
 npm ci
-# Download sitr-0.5.1-models.zip from the matching release first.
-npm run models -- --archive /path/to/sitr-0.5.1-models.zip
+# Download sitr-0.5.2-models.zip from the matching release first.
+npm run models -- --archive /path/to/sitr-0.5.2-models.zip
 npm run check
 npm run build
 npm run verify:release
@@ -43,10 +43,11 @@ Load `dist/` using the same Chrome steps above. Commands also work in PowerShell
 
 ## What you can control
 
-- **Gender tabs:** choose image areas independently for Female and Male with a clickable person diagram. Automatic labels estimate visible appearance; they do not establish identity or gender.
+- **Visual editors:** choose image and video coverage independently for Female and Male using gender tabs, clickable person diagrams, area menus, and action buttons. Automatic labels estimate visible appearance; they do not establish identity or gender.
 - **Images:** choose exposed skin and hair areas, or Whole body to include clothing. Faces have separate Show, Black, Blur, and Pixelate actions; blur/pixelation strength is independent for each gender.
 - **Advanced segmentation:** optional, image-only anatomy detection powered by BodyPix. **Fast** adds less processing; **Quality** is slower with finer detail. Keep it off for grouped body skin with separate face and hair choices.
-- **Videos:** whole-person silhouettes or faster conservative person boxes, with motion correction between sampled analyses. Select Smooth or Strict playback.
+- **Part thresholds:** hide an entire image part or body when exposed skin exceeds your percentage of that part. Whole-body rules choose Black or Show for the face.
+- **Videos:** whole-person silhouettes or faster person boxes, with a visual editor and motion correction between sampled analyses. Optional **Advanced video mode** adds independent body-skin, face, and hair masks. It is off by default and heavy on performance. Select Smooth or Strict playback.
 - **Effects:** black, normal blur, and checkerboard blur, with independent intensity, grayscale, and mask-expansion controls. Skin and hair regions use black masks.
 - **Sites:** pause on the current site or maintain domain exceptions that also apply to its subdomains and embedded players.
 - **Advanced settings:** separate appearance models, image detection gates, model resolution, CPU threads, and diagnostic outlines.
@@ -65,20 +66,24 @@ Click a face to choose Show, Black, Blur or Pixelate. Blur and Pixelate show a s
 The switch offers **Fast** (stride 16) and **Quality** (stride 8, slower with finer detail). With Advanced segmentation off,
 the body becomes one skin area with Show all / Hide all; face and hair remain
 independent. Advanced segmentation adds processing time and
-can misclassify overlaps. Torso combines chest and belly, and neck is estimated
-from head-labeled body skin. Videos use each gender's whole-person effect.
+can misclassify overlaps. Chest and belly are separate approximate halves along
+the person’s shoulder-to-hip direction, including rotated or lying-down bodies.
+Cropped or uncertain anatomy can retain an Unresolved torso fallback. Neck is
+estimated from head-labeled body skin.
 
-Advanced segmentation is disabled by default. Diagnostic outlines add colored skin-region
-maps; media attributes include `data-local-media-censor-body-regions` and
+Advanced segmentation is disabled by default. Diagnostic outlines add colored anatomy
+maps, including clothing used for threshold measurements; media attributes include `data-local-media-censor-body-regions` and
 BodyPix preprocessing/run/decode timing fields. Cached policy changes report
 zero new model work. See [body-region controls and diagnostics](docs/BODY-REGIONS.md).
 
 | Goal | Settings |
 |---|---|
 | Hide male thigh skin only | Advanced segmentation on → Male → Show all → click thighs → Hide. |
-| Leave men entirely visible | Male → Show all in Images; Videos → Male → Show. |
+| Leave men entirely visible | Male → Show all in Images; Videos → Male → Show (or Show all in advanced video mode). |
 | Cover female skin and hair, show face | Female → Hide all → click face → Show. |
 | Blur male faces but black female faces | Male → face → Blur; Female → face → Black. |
+| Hide the body only above 50% belly skin | Advanced segmentation → belly → Show → Hide entire body → Skin above 50 → choose the face action. |
+| Cover female video skin but show face/hair | Videos → Advanced video mode → Female → body skin → Hide; face and hair → Show. |
 | Keep one website unrestricted | Pause on this site, or manage domain exceptions in All settings → Websites. |
 
 ### Area choices and face effects
@@ -89,7 +94,17 @@ The main controls stay above the gender editor. Scroll within the popup to choos
 
 <p><img src="docs/images/popup-basic.png" width="360" alt="Basic segmentation with one body-skin shape and separate face and hair"> <img src="docs/images/settings-ar.png" width="340" alt="Arabic settings with right-to-left body-area controls"></p>
 
-Cover area has Chosen areas and Whole body. The face always has its own effect. Skin-exposure blackout rules and the old shared face-effect mode have been removed; saved exposure rules are disabled when settings load.
+Cover area has Chosen areas and Whole body. Ordinary skin-area Hide covers exposed skin only. A part threshold can also cover clothing: select a part, set it to **Show** for conditional-only coverage, choose **Hide entire part** or **Hide entire body**, and set **Skin above (%)**. The denominator includes the visible clothed area of that part; exactly 50% does not trigger a 50% rule. Whole-body thresholds offer **Black** or **Show** for the face. These rules are image-only; old global exposure rules remain disabled.
+
+### Part thresholds and video masks
+
+<p><img src="docs/images/part-threshold-body.png" width="440" alt="Male belly threshold: hide the entire body above 50 percent skin while showing the face"> <img src="docs/images/popup-advanced-video.png" width="440" alt="Visual advanced video editor with independently selectable body skin, face and hair"></p>
+
+In **Videos**, the person diagram controls the whole-person Show/Black/Blur/Pixelate choice. Turn on **Advanced video mode** to choose body skin, face and hair separately for each gender. Body skin excludes faces. All three categories come from one MediaPipe Selfie pass; selecting face or hair does not add another inference run. YOLO silhouettes or fast boxes still assign masks to people. Videos never run BodyPix anatomy segmentation or image part thresholds.
+
+**Advanced video mode is heavy on performance and off by default.** It adds MediaPipe on each analyzed video frame and can update more slowly, especially on CPU or with multiple videos. Its expansion slider covers hidden categories while keeping explicitly shown categories open; larger margins can cover nearby clothing. Switching it off restores the standard video effects.
+
+<p><img src="docs/images/settings-advanced-video.png" width="760" alt="Desktop settings with matching visual image and video editors"> <img src="docs/images/settings-advanced-video-ar.png" width="340" alt="Arabic visual video selector and mask expansion in dark mode"></p>
 
 ![Real local fixture with whole-person black coverage](docs/images/coverage-example.png)
 
@@ -117,18 +132,16 @@ Animated images, DRM/unreadable streams, canvas players, browser-internal pages,
 
 This is a browser filtering aid. It does not interpret religious rules or determine whether content is permissible. Validate the settings on the content you use. [Detailed behavior](docs/USER_GUIDE.md), [architecture](docs/ARCHITECTURE.md), and [measured performance](BENCHMARK.md) explain the practical limits. Historical benchmark numbers are not a release-wide performance guarantee.
 
-## What changed in 0.5.1
+## What changed in 0.5.2
 
-- **Separate groin coverage:** Groin (pelvis) has its own image-area action, independent of torso and thighs, in English and Arabic. Existing settings inherit the former torso choice so saved coverage is preserved.
-- **Improved upper thighs:** existing BodyPix shoulder, hip, and knee landmarks help locate the pelvis and extend thigh coverage upward. This uses the existing model backbone, with restored pose outputs and no retraining. Clothing remains outside skin-only coverage.
-- **Models prepared ahead of time:** every model variant runs synthetic warmup at browser/extension startup and stays loaded across pages and setting changes. Recovery repeats preparation. Keeping the models ready uses more idle memory.
-- **Visible startup progress:** the popup shows actual completed steps and elapsed seconds, then Ready for images and videos. Limited-feature and failure states offer Retry. The bar measures completed steps, not time remaining.
+- **Per-part thresholds:** independently configure a skin percentage for each image area and gender. Cover the entire part or entire body when that percentage is exceeded. Coverage includes clothing within the chosen extent.
+- **Threshold face choice:** whole-body part rules offer Black (the default) or Show. Show reopens the face after expansion and temporarily overrides its ordinary effect. Black wins if multiple triggered body rules disagree.
+- **Chest and belly:** separate approximate halves follow the person’s orientation using existing shoulder/hip landmarks and dense anatomy. Old torso choices migrate to both; uncertain anatomy retains the torso fallback.
+- **Advanced video mode:** optional MediaPipe masks for body skin, face and hair, using either existing detector and a separate expansion control. One semantic pass returns all three categories; no anatomy model runs on videos. Off by default, with a visible performance warning.
+- **Visual video controls:** the image-style person diagram, Female/Male tabs, keyboard area selection, action buttons and advanced Show all / Hide all replace the dropdown-only layout. Image and video choices remain independent.
+- **Documentation and checks:** refreshed English/Arabic screenshots, persistence and keyboard checks, rotated torso fixtures, threshold boundary tests, and real-model checks for both video detectors. Model weights and permissions are unchanged from 0.5.1.
 
-<p><img src="docs/images/popup-groin.png" width="360" alt="Male groin and thigh coverage selected independently of torso"> <img src="docs/images/startup-progress.png" width="360" alt="Startup preparation: six of fifteen steps completed with eight seconds elapsed"></p>
-
-<p><img src="docs/images/startup-ready.png" width="360" alt="Popup showing Ready for images and videos"> <img src="docs/images/startup-progress-ar-dark.png" width="360" alt="Arabic startup progress in the dark theme"></p>
-
-Local startup checks took approximately **18–22 seconds** on the test machine. Once prepared, model lookup/loading overhead on tested first frames and setting changes was below **2 ms**; total image processing still varied. This is not a promise of equal first/last-image latency. The optional anatomy models together contain approximately **10.00 MB** of weights. Historical 34/94 ms anatomy-stage measurements preceded the restored pose heads and do not benchmark this release. [Anatomy validation](docs/GROIN-VALIDATION.md) · [Full release notes](docs/RELEASE-NOTES-0.5.1.md).
+Earlier 0.5.1 startup preparation and groin improvements remain available. Read [0.5.1 release notes](docs/RELEASE-NOTES-0.5.1.md) for their historical measurements and [0.5.2 release notes](docs/RELEASE-NOTES-0.5.2.md) for this update. Accuracy, motion and performance limits remain; these tests do not guarantee complete coverage on unseen content.
 
 ## Development and releases
 
@@ -140,7 +153,7 @@ npm run test:browser            # UI, real extension, media and regression check
 npm run release                # Checks, build, browser suite, ZIPs and SHA-256
 ```
 
-The release command writes the extension, corresponding source, and model ZIPs to `release/v0.5.1/`. Publish all three and the checksums together. Packaging is local and never creates a commit, tag, or GitHub release. [Prepared release notes](docs/RELEASE-NOTES-0.5.1.md) · [Validation results](docs/VALIDATION.md) · [Contribution guide](CONTRIBUTING.md) · [Release instructions](docs/RELEASING.md) · [Security reporting](SECURITY.md) · [Changelog](CHANGELOG.md).
+The release command writes the extension, corresponding source, and model ZIPs to `release/v0.5.2/`. Publish all three and the checksums together. Packaging is local and never creates a commit, tag, or GitHub release. [Prepared release notes](docs/RELEASE-NOTES-0.5.2.md) · [Validation results](docs/VALIDATION.md) · [Contribution guide](CONTRIBUTING.md) · [Release instructions](docs/RELEASING.md) · [Security reporting](SECURITY.md) · [Changelog](CHANGELOG.md).
 
 ## License
 

@@ -70,7 +70,7 @@ describe('pelvis geometry from existing clothed part predictions', () => {
     const pelvisPixel = index(.5, .54), thighPixel = index(.62, .55), torsoPixel = index(.5, .3);
     semantic[pelvisPixel] = semantic[thighPixel] = semantic[torsoPixel] = 2;
     const map = decodeBodyRegions(logits, foreground, grid, semantic, side, [person]);
-    expect([map[pelvisPixel], map[thighPixel], map[torsoPixel]]).toEqual([9, 5, 1]);
+    expect([map[pelvisPixel], map[thighPixel], map[torsoPixel]]).toEqual([9, 5, 10]);
     expect(map.filter(Boolean)).toHaveLength(3);
     const invalid = logits.slice(); invalid.fill(NaN);
     expect(decodeBodyRegions(invalid, foreground, grid, semantic, side, [person]).some(Boolean)).toBe(false);
@@ -128,11 +128,11 @@ describe('independent groin policy and migration', () => {
       const settings = normalizeSettings({ schemaVersion: 19, personPolicies: { male: old, female: old } });
       expect(settings.personPolicies!.male.skin.groin).toBe(action);
     }
-    expect(normalizeSettings({ schemaVersion: 19, imageMaleAllowedRegions: ['torso'] }).imageMaleAllowedRegions).toEqual(['torso', 'groin']);
-    expect(normalizeSettings({ schemaVersion: 20, imageMaleAllowedRegions: ['torso'] }).imageMaleAllowedRegions).toEqual(['torso']);
+    expect(normalizeSettings({ schemaVersion: 19, imageMaleAllowedRegions: ['torso'] }).imageMaleAllowedRegions).toEqual(['torso', 'groin', 'chest', 'belly']);
+    expect(normalizeSettings({ schemaVersion: 20, imageMaleAllowedRegions: ['torso'] }).imageMaleAllowedRegions).toEqual(['torso', 'chest', 'belly']);
     const policy = uniformPolicy('show'); policy.skin.groin = 'hide';
     expect(normalizeSettings({ personPolicies: { male: policy } }).personPolicies!.male.skin.groin).toBe('hide');
-    expect(BODY_REGIONS).toHaveLength(9);
+    expect(BODY_REGIONS).toHaveLength(11);
   });
   it('hides groin and corrected upper thighs independently of torso, clothing, hands and face even with expansion', () => {
     const person: Track = { ...fixture().person, id: 'clothed-male', label: 'male', labelUsable: true, state: 'active',

@@ -5,6 +5,24 @@ let language: Language = 'en';
 
 // Source text is the key: controls, option values, and DOM structure stay unchanged.
 export const ARABIC: Readonly<Record<string, string>> = {
+  'Chest and belly follow body orientation. Unrecognized skin has its own choice in the area menu.': 'يتبع الصدر والبطن اتجاه الجسم. للبشرة غير المصنّفة اختيار مستقل في قائمة المناطق.',
+  'Heavy on performance': 'يستهلك أداءً عاليًا',
+  'About advanced video mode': 'حول وضع الفيديو المتقدم',
+  'Video gender policies': 'خيارات الجنس للفيديو',
+  'Video choices for {gender}': 'خيارات الفيديو: {gender}',
+  'Body skin excludes face and hair. Clothes stay visible.': 'بشرة الجسم لا تشمل الوجه والشعر. تبقى الملابس ظاهرة.',
+  'Face is separate from body skin in advanced video mode.': 'الوجه مستقل عن بشرة الجسم في وضع الفيديو المتقدم.',
+  'Advanced video mode': 'وضع الفيديو المتقدم',
+  'Heavy on performance: adds MediaPipe to the selected person detector on every analyzed video frame. Skin, face and hair share one model pass. No body-part segmentation.': 'يستهلك أداءً عاليًا: يضيف MediaPipe إلى كاشف الأشخاص المختار في كل إطار فيديو يُحلّل. تُستخرج البشرة والوجه والشعر بتمرير واحد للنموذج، دون تقسيم أجزاء الجسم.',
+  'Video skin mask expansion': 'توسيع قناع البشرة في الفيديو',
+  'Expansion applies to hidden skin, face and hair. Shown areas stay open. More expansion covers nearby clothing.': 'ينطبق التوسيع على البشرة والوجه والشعر المخفي. تبقى المناطق المختارة للإظهار مكشوفة. قد يغطي التوسيع الأكبر ملابس قريبة.',
+  'Advanced video mode covers chosen skin, face and hair inside detected people. Heavy on performance; fast motion can outrun a mask.': 'يغطي وضع الفيديو المتقدم البشرة والوجه والشعر المختارة داخل الأشخاص المكتشفين. يستهلك أداءً عاليًا؛ وقد تتجاوز الحركة السريعة القناع.',
+  'Face when body threshold triggers': 'الوجه عند تفعيل عتبة الجسم',
+  'Chest': 'الصدر', 'Belly': 'البطن', 'Unresolved torso': 'الجذع غير المحدد',
+  'Part threshold · images only': 'عتبة الجزء · للصور فقط',
+  'Hide entire part': 'إخفاء الجزء بالكامل', 'Hide entire body': 'إخفاء الجسم بالكامل',
+  'Skin is measured against this part including clothes. The rule adds coverage when exceeded; Show/Hide still applies.': 'تُقاس البشرة من مساحة الجزء بما فيها الملابس. تضيف القاعدة تغطية عند تجاوز العتبة؛ ويبقى اختيار الإظهار أو الإخفاء مطبقًا.',
+  'Chest and belly are approximate halves along the body, following its orientation.': 'الصدر والبطن نصفان تقريبيان على امتداد الجسم، ويتبعان اتجاهه.',
   'Preparing protection…': 'جارٍ تجهيز الحماية…',
   'Starting up…': 'جارٍ بدء التشغيل…',
   'Preparation progress': 'تقدم التجهيز',
@@ -23,7 +41,7 @@ export const ARABIC: Readonly<Record<string, string>> = {
   "Images only · extra processing": "للصور فقط · معالجة إضافية",
   "Neck boundaries are approximate and can be imperfect.": "حدود الرقبة تقريبية وقد تكون غير دقيقة.",
   "Advanced segmentation is image-only and adds processing time. Quality is slower but gives finer detail. Overlapping parts can be misclassified.": "التقسيم المتقدم للصور فقط ويزيد وقت المعالجة. وضع الجودة أبطأ لكنه يوفّر تفاصيل أدق. قد يخطئ في تصنيف الأجزاء المتداخلة.",
-  "Advanced segmentation colors: torso red, groin coral, upper arms blue, forearms purple, hands yellow, thighs pink, lower legs green, feet cyan, neck orange. Unrecognized skin follows its saved choice.": "ألوان التقسيم المتقدم: الجذع أحمر، منطقة الحوض مرجانية، العضدان أزرق، الساعدان بنفسجي، اليدان أصفر، الفخذان وردي، الساقان أخضر، القدمان سماوي، والرقبة برتقالي. تتبع البشرة غير المعروفة اختيارها المحفوظ.",
+  "Advanced segmentation colors: chest red, belly amber, unresolved torso red, groin coral, upper arms blue, forearms purple, hands yellow, thighs pink, lower legs green, feet cyan, neck orange. Unrecognized skin follows its saved choice.": "ألوان التقسيم المتقدم: الجذع أحمر، منطقة الحوض مرجانية، العضدان أزرق، الساعدان بنفسجي، اليدان أصفر، الفخذان وردي، الساقان أخضر، القدمان سماوي، والرقبة برتقالي. تتبع البشرة غير المعروفة اختيارها المحفوظ.",
   'Groin (pelvis)': 'منطقة العانة (الحوض)',
   'Only exposed skin is affected. The pelvis boundary is estimated from torso and legs.': 'تتأثر البشرة المكشوفة فقط. تُقدّر حدود الحوض من الجذع والساقين.',
 

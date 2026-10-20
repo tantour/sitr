@@ -3,7 +3,7 @@
 import type { PersonPolicy, Settings } from '../config/settings';
 import type { TrackObservation } from '../state/contracts';
 import { allowedRegionIds } from '../vision/bodyRegionMap';
-import { hasImageCoverage, policyFor, skinHidden } from '../config/personPolicy';
+import { hasAdvancedVideoCoverage, hasImageCoverage, policyFor, skinHidden } from '../config/personPolicy';
 
 export function imageDetectionGatePass(settings: Settings, hasFace: boolean, hasPerson: boolean): boolean {
   switch (settings.imageDetectionGate) {
@@ -22,7 +22,7 @@ export function personSelected(observation: Pick<TrackObservation, 'label' | 'la
   if (settings.personPolicies) {
     if (label === 'unknown' && unknownPolicy === 'allow') return false;
     const policy = policyFor(settings, observation);
-    return kind === 'video' ? policy.video !== 'show' : hasImageCoverage(policy);
+    return kind === 'video' ? settings.advancedVideoMode ? hasAdvancedVideoCoverage(policy) : policy.video !== 'show' : hasImageCoverage(policy);
   }
   if (settings.filter === 'off') return false;
   return label === 'unknown' ? unknownPolicy !== 'allow' : settings.filter === 'both' || settings.filter === label;

@@ -103,6 +103,12 @@ Appearance tabs use muted labels, ink selected text, and a sea bottom rule. Pres
 Media options pair native checkboxes with outline SVGs; their enclosing label gains soft-sea fill when checked. Protection pairs explanatory status copy with a 44 × 26px switch and 20px thumb; neutral paused styling accompanies a textual reason.
 Controls retain a 2px focus outline with 3px offset. Disabled controls use opacity .55. Relevant native disclosures expose effect details. The live footer reports saving, success, drafts, and errors; preferences save automatically, while website drafts require explicit saving.
 
+Video appearance shares the image editor's gender tabs, outlined/filled person diagram,
+area menu, and action buttons. Standard video selects the whole silhouette with
+Show, Black, Blur or Pixelate. Advanced video splits the diagram into body skin,
+face and hair, with Show/Hide and gender-specific Show all / Hide all. Expansion
+stays below the diagram; the mode's performance warning remains visible above it.
+
 Theme and language use native header selects and a separate `uiPreferences` storage key, with live synchronization between open views. Locale changes translate existing text nodes, accessible names, options, helper copy, outputs, and dynamic errors without replacing form controls or drafts. Arabic measurements use Arabic digits and plural rules; version identifiers and domain text keep their original format.
 
 ## Do's and Don'ts

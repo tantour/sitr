@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Sitr contributors
 import { resolveYoloSize, type Settings } from './settings';
-import { hasBodyCoverage, hasFaceEffects } from './personPolicy';
+import { hasBodyCoverage, hasFaceEffects, hasThresholdFaceOpenings } from './personPolicy';
 
 /** Settings that can change image detections, associations, or automatic labels.
  * Rendering options and video-only options do not invalidate image inference. */
@@ -11,6 +11,7 @@ export function imageAnalysisKey(settings: Settings): string {
     settings.imageCoverage, settings.imageDetectionGate,
     settings.imageCoverage === 'regions' && hasBodyCoverage(settings) ? settings.imageBodyRegionMode : 'off',
     hasFaceEffects(settings), settings.imageWholeBodyFaceEffect !== 'show',
+    hasThresholdFaceOpenings(settings),
     settings.automaticGender, settings.imageGenderModel,
     settings.faceAssociation, settings.faceAssociationMode, settings.debugOverlay,
     settings.imageSkinThresholdEnabled && !settings.imageSkinThresholdIncludeFace &&

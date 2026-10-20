@@ -1,6 +1,6 @@
 # Sitr privacy policy
 
-Effective date: October 14, 2026. Applies to the unpacked Sitr 0.5.0 extension.
+Effective date: October 20, 2026. Applies to the unpacked Sitr 0.5.2 extension.
 
 ## Processing and storage
 

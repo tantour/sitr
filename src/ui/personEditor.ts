@@ -4,7 +4,7 @@ import { BODY_REGIONS, type FaceEffect, type PersonArea, type Settings } from '.
 import { editablePolicies, faceStrength, genderPolicy, groupedBodySkin, uniformPolicy } from '../config/personPolicy';
 import { number, t } from './localization';
 
-export const AREA_NAMES: Record<PersonArea, string> = { body: 'Body skin', hair: 'Hair', face: 'Face', neck: 'Neck', torso: 'Torso (chest and belly)', groin: 'Groin (pelvis)',
+export const AREA_NAMES: Record<PersonArea, string> = { chest: 'Chest', belly: 'Belly', body: 'Body skin', hair: 'Hair', face: 'Face', neck: 'Neck', torso: 'Unresolved torso', groin: 'Groin (pelvis)',
   'upper-arms': 'Upper arms', forearms: 'Forearms', hands: 'Hands', thighs: 'Thighs', 'lower-legs': 'Lower legs', feet: 'Feet', 'other-skin': 'Unrecognized skin' };
 const ACTION_NAMES = { show: 'Show', hide: 'Hide', black: 'Black', blur: 'Blur', checkerboard: 'Pixelate' };
 
@@ -19,12 +19,22 @@ export function initializePersonEditor(getSettings: () => Settings,
   const model = document.getElementById('imageBodyRegionMode') as HTMLSelectElement;
   const toggle = document.getElementById('bodyPixEnabled') as HTMLInputElement;
   const strength = document.getElementById('imageFaceEffectIntensity') as HTMLInputElement;
+  const thresholdTarget = document.getElementById('partThresholdTarget') as HTMLSelectElement;
+  const thresholdPercent = document.getElementById('partThresholdPercent') as HTMLInputElement;
+  const thresholdFace = document.getElementById('partThresholdFace') as HTMLSelectElement;
   const available = (part: PersonArea, enabled: boolean) => part === 'hair' || part === 'face' || (enabled ? part !== 'body' : part === 'body');
   const refresh = () => {
     if (!getSettings()) return;
     const policy = genderPolicy(getSettings(), gender);
     const enabled = getSettings().imageBodyRegionMode !== 'off';
-    if (!available(area, enabled)) area = enabled ? 'torso' : 'body';
+    if (!available(area, enabled)) area = enabled ? 'chest' : 'body';
+    document.getElementById('partThresholdControls')!.hidden = !enabled || !BODY_REGIONS.includes(area as typeof BODY_REGIONS[number]);
+    const rule = policy.partThresholds?.find(rule => rule.area === area);
+    thresholdTarget.value = rule?.target ?? 'off';
+    thresholdPercent.value = String(rule?.percent ?? 50);
+    document.getElementById('partThresholdPercentControl')!.hidden = !rule;
+    document.getElementById('partThresholdFaceControl')!.hidden = rule?.target !== 'body';
+    thresholdFace.value = rule?.face ?? 'black';
     toggle.checked = enabled;
     model.hidden = !enabled;
     root.dataset.bodypix = enabled ? 'on' : 'off';
@@ -59,11 +69,11 @@ export function initializePersonEditor(getSettings: () => Settings,
       button.hidden = area === 'body' ? true : area === 'face' ? action === 'hide' : !['show', 'hide'].includes(action);
       button.setAttribute('aria-pressed', String(value(area) === action));
     });
-    for (const appearance of ['female', 'male'] as const) (document.getElementById(`videoPolicy-${appearance}`) as HTMLSelectElement).value = genderPolicy(getSettings(), appearance).video;
     document.getElementById('personAreaHelp')!.textContent = t(area === 'body' ? 'Use Show all or Hide all above. Face and hair keep their own choices.' : area === 'face' ? 'Face effects are separate for each gender.'
       : area === 'hair' ? 'This choice covers hair only, independently of skin.'
       : area === 'other-skin' ? 'Skin the body model cannot recognize uses this choice.'
       : area === 'neck' ? 'Neck boundaries are approximate and can be imperfect.'
+      : area === 'chest' || area === 'belly' ? 'Chest and belly are approximate halves along the body, following its orientation.'
       : area === 'groin' ? 'Only exposed skin is affected. The pelvis boundary is estimated from torso and legs.'
       : 'Only exposed skin in this area is affected. Clothes stay visible.');
     model.value = getSettings().imageBodyRegionMode;
@@ -82,6 +92,21 @@ export function initializePersonEditor(getSettings: () => Settings,
     region.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectArea(region.dataset.personArea as PersonArea); } };
   });
   picker.onchange = () => selectArea(picker.value as PersonArea);
+  const saveThreshold = async (control: HTMLSelectElement | HTMLInputElement) => {
+    if (!BODY_REGIONS.includes(area as typeof BODY_REGIONS[number])) return;
+    if (thresholdTarget.value !== 'off' && (!thresholdPercent.checkValidity() || !Number.isFinite(thresholdPercent.valueAsNumber))) {
+      thresholdPercent.reportValidity(); return;
+    }
+    const policies = editablePolicies(getSettings()), policy = policies[gender];
+    policy.partThresholds = (policy.partThresholds ?? []).filter(rule => rule.area !== area);
+    if (thresholdTarget.value !== 'off') policy.partThresholds.push({ area: area as typeof BODY_REGIONS[number],
+      percent: thresholdPercent.valueAsNumber, target: thresholdTarget.value as 'part' | 'body',
+      ...(thresholdTarget.value === 'body' ? { face: thresholdFace.value as 'show' | 'black' } : {}) });
+    await save({ personPolicies: policies, imageCoverage: 'regions' }, control); refresh();
+  };
+  thresholdTarget.onchange = () => { void saveThreshold(thresholdTarget); };
+  thresholdPercent.onchange = () => { void saveThreshold(thresholdPercent); };
+  thresholdFace.onchange = () => { void saveThreshold(thresholdFace); };
   strength.oninput = () => { document.getElementById('imageFaceEffectIntensityValue')!.textContent = number(Number(strength.value)); };
   strength.onchange = async () => {
     const policies = editablePolicies(getSettings()); policies[gender].faceStrength = Number(strength.value);
@@ -112,15 +137,10 @@ export function initializePersonEditor(getSettings: () => Settings,
   for (const action of ['show', 'hide'] as const) {
     const button = document.getElementById(action === 'show' ? 'showAllAreas' : 'hideAllAreas') as HTMLButtonElement;
     button.onclick = async () => {
-      const policies = editablePolicies(getSettings()), video = policies[gender].video;
-      policies[gender] = getSettings().imageBodyRegionMode === 'off' ? groupedBodySkin(policies[gender], action) : { ...uniformPolicy(action), video };
+      const policies = editablePolicies(getSettings()), { video, videoSkin, videoFace, videoHair } = policies[gender];
+      policies[gender] = getSettings().imageBodyRegionMode === 'off' ? groupedBodySkin(policies[gender], action) : { ...uniformPolicy(action), video, videoSkin, videoFace, videoHair };
       await save({ personPolicies: policies }, button); refresh();
     };
-  }
-  for (const appearance of ['female', 'male'] as const) {
-    const control = document.getElementById(`videoPolicy-${appearance}`) as HTMLSelectElement;
-    control.onchange = async () => { const policies = editablePolicies(getSettings()); policies[appearance].video = control.value as FaceEffect;
-      await save({ personPolicies: policies }, control); refresh(); };
   }
   return { refresh };
 }

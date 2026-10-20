@@ -21,10 +21,10 @@ In Advanced segmentation, **Groin (pelvis)** is separate from torso and thighs.
 Existing torso choices migrate to groin. To hide groin and thigh skin while
 showing torso, select each of those two areas and choose **Hide**.
 
-YOLO prefers WebGPU with graph capture and a persistent GPU input buffer, falling back to the original WASM model when GPU setup fails. A worker failure or timeout also retries on WASM. MediaPipe semantic segmentation runs for every still image, including whole-body modes, to cover foreground regions missed by YOLO; video skips it. YuNet and FastFace retain WASM. No resolution, confidence threshold, weights or FP32 precision were reduced. The CPU thread setting controls WASM, not GPU parallelism. Native 20–30 ms inference is not guaranteed; see the measured results in BENCHMARK.md.
+YOLO prefers WebGPU with graph capture and a persistent GPU input buffer, falling back to the original WASM model when GPU setup fails. A worker failure or timeout also retries on WASM. MediaPipe semantic segmentation runs for every still image, including whole-body modes, to cover foreground regions missed by YOLO; standard video skips it, while Advanced video mode adds the same semantic pass to analyzed video frames. YuNet and FastFace retain WASM. No resolution, confidence threshold, weights or FP32 precision were reduced. The CPU thread setting controls WASM, not GPU parallelism. Native 20–30 ms inference is not guaranteed; see the measured results in BENCHMARK.md.
 
 1. In PowerShell, open the project root and run `npm.cmd ci`.
-2. Install a model ZIP matching this source revision with `npm.cmd run models -- --archive path/to/sitr-0.5.1-models.zip`, then run `npm.cmd run build`. Use the matching v0.5.1 bundle, which includes all fifteen models; source exports are documented in [models/README.md](../models/README.md).
+2. Install a model ZIP matching this source revision with `npm.cmd run models -- --archive path/to/sitr-0.5.2-models.zip`, then run `npm.cmd run build`. Use the matching v0.5.2 bundle, which includes all fifteen models; source exports are documented in [models/README.md](../models/README.md).
 3. In Chrome 148+, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select this folder's `dist` directory.
 4. Open a page with images or readable video. Sitr starts with female-appearance filtering, automatic labeling, and the face classifier for both media types. The popup shows protection, media switches, Cover area, Advanced segmentation, and separate **Images** / **Videos** appearance tabs. **Pause on this site** adds the current domain to exceptions. Open **All settings** for a full-page view organized into Coverage, Detection, Performance, Diagnostics, and Websites. Website-list edits apply when you click **Save websites**.
 5. After rebuilding, click **Reload** on the extension page and refresh the website tab. Confirm the version shown in **All settings** matches `manifest.json`.
@@ -33,7 +33,7 @@ The header includes **System / Light / Dark** theme choices and **English / ال
 
 The Images editor has separate Female and Male tabs and a clickable person. Click an area, then choose Show or Hide; face also offers Black, Blur and Pixelate. To hide only male thighs, enable Advanced segmentation and choose Male → Show all, click the thighs, then Hide. Hair, face, neck and all other shown areas remain visible. Each gender has independent video Show/Black/Blur/Pixelate controls. The old global people filter and shared hair/face checkboxes are replaced by these policies. Old settings migrate when opening the editor. Labels still estimate appearance and can be wrong.
 
-The visible Advanced segmentation switch above the gender tabs enables individual areas, with Fast (stride 16) or Quality (stride 8, slower with finer detail). Off mode shows one body-skin shape; Show all and Hide all above it leave hair and face choices independent. MediaPipe continues to detect exposed skin. Torso combines chest and belly; neck is estimated from head-labeled body skin. Unrecognized skin has its own area-menu choice. Model failure covers requested hidden skin conservatively, while fully shown people remain shown. Expansion respects shown areas and removes the old border around fully shown people. Unclassified people can Show or use the union of the two policies. Cover area is visible above the editor. Whole body includes clothing and keeps the face effect separate. Skin-exposure rules have been removed and saved rules are disabled. [Full area-editor behavior](BODY-REGIONS.md).
+The visible Advanced segmentation switch above the gender tabs enables individual areas, with Fast (stride 16) or Quality (stride 8, slower with finer detail). Off mode shows one body-skin shape; Show all and Hide all above it leave hair and face choices independent. MediaPipe continues to detect exposed skin. Chest and belly are approximate halves following body orientation; neck is estimated from head-labeled body skin. Unrecognized skin has its own area-menu choice. Model failure covers requested hidden skin conservatively, while fully shown people remain shown. Expansion respects shown areas and removes the old border around fully shown people. Unclassified people can Show or use the union of the two policies. Cover area is visible above the editor. Whole body includes clothing and keeps the face effect separate. Part thresholds can cover an entire part or body when exposed skin exceeds a chosen percentage of that part, including clothing. Select Show for conditional-only coverage. Old global skin-exposure rules remain disabled. [Full area-editor behavior](BODY-REGIONS.md).
 
 Whole-body images and videos each offer **Black**, **Normal blur**, and **Checkerboard blur** (pixelated mosaic), with separate intensity and grayscale controls for the two blur styles. Image faces have independent strength for each gender, shown directly below Blur or Pixelate; the optional grayscale face-effect setting is shared. Skin-and-hair image regions always stay black, even if a whole-body blur effect was previously selected. Effects are confined to the selected masks; if a page's media cannot be copied into the effect canvas, the mask remains black. Blur and mosaic can leave shapes recognizable, especially at low intensity.
 
@@ -124,3 +124,32 @@ Animated images, DRM or video that remains unreadable, canvas players, restricte
 Frames, face crops, masks, tracks, and temporary labels stay in memory and are not sent to a server or persisted. Settings are stored locally. Cross-origin image acquisition may fetch the source image through extension permissions so it can be analyzed locally.
 
 The current production/release checks are documented in [RELEASING.md](RELEASING.md). Historical measurements are described in BENCHMARK.md. Model URLs, hashes, and provenance are listed in [models/artifacts.json](../models/artifacts.json); license details are in [NOTICE.md](../NOTICE.md). Ultralytics software/weights have separate [licensing terms](https://www.ultralytics.com/license). Redistribute matching source and retain all licenses; see [SOURCE.md](../SOURCE.md).
+
+
+## Advanced video mode
+
+In Video appearance, **Advanced video mode** is off by default. It keeps the chosen
+YOLO silhouette or fast-box detector and adds MediaPipe Selfie on each analyzed
+frame. **This is heavy on performance**, especially with several videos. Fast-box
+capture uses the performance preset's lower frame-analysis rate in this mode.
+No BodyPix/body-part segmentation or part thresholds run on videos.
+
+Use the video editor’s Female/Male tabs and clickable person, just like the image
+editor. Standard mode selects the whole person with Show, Black, Blur or Pixelate.
+Advanced mode separates **Body skin**, **Face**, and **Hair**, with Show/Hide for
+each gender. The area menu provides the same choices for keyboard users, and
+Show all / Hide all changes only the selected gender’s advanced video areas.
+Body skin excludes faces. Face and hair use the same MediaPipe pass, adding no
+extra inference runs. All hidden areas use black masks; clothing stays visible
+except where mask expansion reaches it. **Video skin mask expansion** applies to
+all three masks and respects areas set to Show. Standard whole-person video
+effects and their expansion are retained when the mode is switched off.
+Unclassified people follow the video Show/Censor choice; Censor combines the two
+gender policies. Detection/segmentation mistakes and fast motion can leave gaps.
+
+For an image part threshold set to **Hide entire body**, **Face when body threshold
+triggers** offers **Black** (the default, including existing rules) or **Show**.
+Show reopens detected face skin and the uniquely associated face box after body
+mask expansion, and overrides that person's normal face effect while the rule is
+triggered. If several body rules trigger, a Black choice takes precedence. Other
+people's coverage is preserved. No threshold runs on videos.

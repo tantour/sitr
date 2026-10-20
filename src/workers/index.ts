@@ -2,8 +2,10 @@
 // Copyright (C) 2026 Sitr contributors
 /// <reference lib="webworker" />
 import { BODY_REGIONS, ENGINE, resolvePersonSize, type FaceEffect, type WholeBodyEffect, type Settings, type Label } from '../config/settings';
-import { faceStrength, genderPolicy, hasBodyCoverage, hasFaceEffects, policyFor } from '../config/personPolicy';
+import { faceStrength, genderPolicy, hasBodyCoverage, hasFaceEffects, hasThresholdFaceOpenings, policyFor } from '../config/personPolicy';
 import { regionCoverage } from '../rendering/regionCoverage';
+import { partThresholdCoverage } from '../rendering/partThreshold';
+import { videoSkinMasks } from '../rendering/videoSkin';
 import type { AnalysisResult, FramePacket, FrameKey, Track, WorkerInput, WorkerOutput, PersonDetection } from '../state/contracts';
 import type { YoloPersonSegmenter } from '../vision/person';
 import type { FastPersonDetector } from '../vision/fastPerson';
@@ -28,7 +30,7 @@ import type { BodyRegionDiagnostics } from '../state/contracts';
 import { MODEL_SIZES, BODY_REGION_MODES, BODY_GENDER_MODELS, warmModels, warmupPixels } from '../vision/warmup';
 
 type FaceLabel = { label: Label; labelUsable: boolean };
-type Session = { epoch: number; tracker: ByteTracker; lastTouched: number; lastBytes: number; kind?: 'image' | 'video'; imageAnalysis?: string; timingsMs?: AnalysisResult['timingsMs']; genderDiagnostics?: AnalysisResult['genderDiagnostics']; bodyRegionDiagnostics?: BodyRegionDiagnostics; last?: { frame: FramePacket; tracks: Track[]; categories: Uint8Array; bodyRegions?: Uint8Array; composition: Composition; faceAssociations?: FaceAssociation[]; detectedFaces?: FaceBox[]; faceLabels?: FaceLabel[] } };
+type Session = { videoAdvanced?: boolean; epoch: number; tracker: ByteTracker; lastTouched: number; lastBytes: number; kind?: 'image' | 'video'; imageAnalysis?: string; timingsMs?: AnalysisResult['timingsMs']; genderDiagnostics?: AnalysisResult['genderDiagnostics']; bodyRegionDiagnostics?: BodyRegionDiagnostics; last?: { frame: FramePacket; tracks: Track[]; categories: Uint8Array; bodyRegions?: Uint8Array; composition: Composition; faceAssociations?: FaceAssociation[]; detectedFaces?: FaceBox[]; faceLabels?: FaceLabel[] } };
 const sessions = new Map<string, Session>();
 type CachedImage = { key: string; rgba: Uint8Array; faceRgba?: Uint8Array; detections: Awaited<ReturnType<YoloPersonSegmenter['segment']>>;
   categories: Uint8Array; bodyRegions?: Uint8Array; bodyRegionDiagnostics?: BodyRegionDiagnostics; faces?: FaceBox[]; gender?: GenderEstimate[]; genderReady: boolean; bytes: number };
@@ -350,7 +352,7 @@ function render(frame: FramePacket, session: Session, composition: Composition):
     !!session.last?.detectedFaces?.length, !!session.last?.tracks.length);
   const thresholds = !isVideo && gatePass ? imageSkinThresholds(observations, settings)
     : { bodyIds: new Set<string>(), blackImage: false };
-  const blackMask = thresholds.bodyIds.size ? new Uint8Array(size * size) : undefined;
+  let blackMask = thresholds.bodyIds.size ? new Uint8Array(size * size) : undefined;
   const facesFor = (id: string) => (session.last?.faceAssociations ?? [])
     .filter(item => item.trackId === id && !item.ambiguous)
     .map(item => session.last?.detectedFaces?.[item.faceIndex]?.box)
@@ -358,6 +360,13 @@ function render(frame: FramePacket, session: Session, composition: Composition):
   const wholePerson = isVideo || settings.imageCoverage !== 'regions';
   const alpha = wholePerson ? new Uint8Array(0) : new Uint8Array(size * size);
   const bodyRegions = bodyRegionsEnabled(settings, frame.kind) ? session.last?.bodyRegions : undefined;
+  const partCoverage = !isVideo && gatePass ? partThresholdCoverage(observations, settings, bodyRegions, size, facesFor) : undefined;
+  const partThreshold = partCoverage?.mask;
+  if (partThreshold?.some(Boolean)) {
+    // Black threshold coverage must be painted after independent face effects.
+    blackMask ??= new Uint8Array(size * size);
+    blackMask.set(partThreshold);
+  }
   const allowedSkin = bodyRegions ? new Uint8Array(size * size) : undefined;
   const requiredCoverage = bodyRegions ? new Uint8Array(size * size) : undefined;
   const bodyRegionDiagnostics = session.bodyRegionDiagnostics && { ...session.bodyRegionDiagnostics,
@@ -373,11 +382,13 @@ function render(frame: FramePacket, session: Session, composition: Composition):
   if (staticMask && settings.imageCoverage === 'whole-body')
     openAssociatedFaces(staticMask, size, session.last?.detectedFaces?.map(face => face.box) ?? []);
   if (!wholePerson && staticMask) alpha.set(staticMask);
-  const trackMasks: NonNullable<AnalysisResult['trackMasks']> = [];
+  const trackMasks: NonNullable<AnalysisResult['trackMasks']> = isVideo && settings.advancedVideoMode
+    ? videoSkinMasks(session.last?.tracks ?? [], session.last?.categories ?? new Uint8Array(size * size), settings, size) : [];
   for (let t = 0; t < observations.length; t++) {
     if (!gatePass) break;
     const observation = observations[t];
     if (!personSelected(observation, settings, frame.kind)) continue;
+    if (isVideo && settings.advancedVideoMode) continue;
     if (blackMask && thresholds.bodyIds.has(observation.id)) {
       const track = session.last?.tracks.find(candidate => candidate.id === observation.id);
       if (track) {
@@ -421,10 +432,10 @@ function render(frame: FramePacket, session: Session, composition: Composition):
   }
   // Expansion must not repaint confidently owned skin in an explicitly allowed region.
   if (allowedSkin) for (let i = 0; i < alpha.length; i++) if (allowedSkin[i] && !requiredCoverage![i]) alpha[i] = 0;
-  if (settings.personPolicies && !wholePerson && gatePass) alpha.set(regionCoverage(composition, session.last?.tracks ?? [], settings, size, bodyRegions));
+  if (settings.personPolicies && !wholePerson && gatePass) alpha.set(regionCoverage(composition, session.last?.tracks ?? [], settings, size, bodyRegions, partThreshold));
   const noImageCoverage = settings.personPolicies ? !['female', 'male'].some(gender => {
     const policy = genderPolicy(settings!, gender as 'female' | 'male');
-    return policy.hair === 'hide' || policy.face !== 'show' || policy.otherSkin === 'hide' || BODY_REGIONS.some(area => policy.skin[area] === 'hide');
+    return !!policy.partThresholds?.length || policy.hair === 'hide' || policy.face !== 'show' || policy.otherSkin === 'hide' || BODY_REGIONS.some(area => policy.skin[area] === 'hide');
   }) : settings.filter === 'off';
   if (!gatePass || (noImageCoverage && !isVideo && !unreliable && !unassigned)) reason = 'off';
   const rgbaMask = new Uint8Array(alpha.length * 4);
@@ -437,6 +448,8 @@ function render(frame: FramePacket, session: Session, composition: Composition):
       return [...strengths].sort((a, b) => a - b).flatMap(intensity => {
         const alpha = imageFaceMask(session, settings!, size, kind, intensity);
         if (!alpha?.some(Boolean)) return [];
+        for (const observation of observations) if (partCoverage?.showFaceIds.has(observation.id))
+          openThresholdFace(alpha, observation, size, facesFor(observation.id));
         if (!settings!.imageSkinThresholdIncludeFace) for (const observation of observations)
           if (thresholds.bodyIds.has(observation.id)) openThresholdFace(alpha, observation, size, facesFor(observation.id));
         return [{ alpha, effect: { kind, intensity, grayscale: settings!.imageFaceEffectGrayscale } }];
@@ -454,7 +467,7 @@ function render(frame: FramePacket, session: Session, composition: Composition):
     capturedAtMs: frame.capturedAtMs, analyzedAtMs: now, settingsRevision: settings.revision,
     black: thresholds.blackImage, reason, rgbaMask, faceMask, faceLayers, blackMask,
     trackMasks: wholePerson ? trackMasks : undefined,
-    effect: wholePerson && !(isVideo && settings.personPolicies) ? { kind: isVideo ? settings.videoEffect : settings.imageWholeBodyEffect,
+    effect: wholePerson && !(isVideo && (settings.personPolicies || settings.advancedVideoMode)) ? { kind: isVideo ? settings.videoEffect : settings.imageWholeBodyEffect,
       intensity: isVideo ? settings.videoEffectIntensity : settings.imageEffectIntensity,
       grayscale: isVideo ? settings.videoEffectGrayscale : settings.imageEffectGrayscale } : undefined,
     faceEffect: faceMask ? { kind: faceKind === 'show' ? 'black' : faceKind,
@@ -492,6 +505,7 @@ function render(frame: FramePacket, session: Session, composition: Composition):
 
 function renderCached(session: Session, current: Settings): AnalysisResult {
   if (!session.last) throw new Error('Cached analysis unavailable');
+  if (session.kind === 'video' && session.videoAdvanced !== current.advancedVideoMode) throw new Error('Cached analysis unavailable');
   const at = performance.now();
   if (session.last.bodyRegions && bodyRegionsEnabled(current, session.last.frame.kind) && session.bodyRegionDiagnostics)
     session.bodyRegionDiagnostics = { ...session.bodyRegionDiagnostics, status: 'cache' };
@@ -502,7 +516,7 @@ function renderCached(session: Session, current: Settings): AnalysisResult {
     bodyRegions: 0, bodyRegionPreprocess: 0, bodyRegionRun: 0, bodyRegionDecode: 0,
     personPreprocess: 0, personRun: 0, personDecode: 0, semanticPreprocess: 0, semanticRun: 0, semanticDecode: 0,
     facePreprocess: 0, faceRun: 0, faceDecode: 0, genderPreprocess: 0, genderRun: 0, genderDecode: 0,
-    backend: 'cache', semanticBackend: session.kind === 'video' ? 'skipped' : 'cache',
+    backend: 'cache', semanticBackend: session.kind === 'video' && !current.advancedVideoMode ? 'skipped' : 'cache',
     bodyRegionBackend: bodyRegionsEnabled(current, session.last.frame.kind) && session.last.bodyRegions ? 'cache' : result.bodyRegionDiagnostics?.status,
     bodyRegionModel: current.imageBodyRegionMode, composition: compositionMs, render: performance.now() - renderAt,
     acquire: 0, queue: 0, tracking: 0, total: performance.now() - at };
@@ -516,7 +530,7 @@ async function analyze(frame: FramePacket): Promise<void> {
   const side = resolvePersonSize(settings, frame.kind);
   if (frame.width !== side || frame.height !== side || frame.rgba.length !== side * side * 4 || frame.rgba.byteLength > ENGINE.maxPayloadBytes) throw new Error('Invalid frame dimensions');
   const reused = cachedImage(frame, settings);
-  const person = reused ? undefined : await ensureModels(side, frame.kind === 'image',
+  const person = reused ? undefined : await ensureModels(side, frame.kind === 'image' || settings.advancedVideoMode,
     frame.kind === 'video' && settings.videoDetector === 'fast-box');
   const modelInit = performance.now() - started;
   let personMs = 0, semanticMs = 0, faceMs = 0, genderMs = 0;
@@ -532,7 +546,7 @@ async function analyze(frame: FramePacket): Promise<void> {
   })();
   const semanticTask = (async () => {
     if (reused) return reused.categories;
-    if (frame.kind === 'video') return new Uint8Array(side * side);
+    if (frame.kind === 'video' && !settings!.advancedVideoMode) return new Uint8Array(side * side);
     // Local MediaPipe blocks this JS worker. Let ONNX submit and complete first;
     // otherwise semantic work delays GPU dispatch/readback and pollutes its timer.
     // A separate semantic worker can still overlap without blocking ONNX.
@@ -566,7 +580,7 @@ async function analyze(frame: FramePacket): Promise<void> {
   const imageNeedsFaceMatching = frame.kind === 'image' &&
     (settings.faceAssociation || settings.debugOverlay || settings.imageCoverage === 'whole-body' ||
       (settings.imageSkinThresholdEnabled && !settings.imageSkinThresholdIncludeFace) ||
-      (settings.imageCoverage === 'regions' && hasFaceEffects(settings)) ||
+      (settings.imageCoverage === 'regions' && (hasFaceEffects(settings) || hasThresholdFaceOpenings(settings))) ||
       (settings.automaticGender && settings.imageGenderModel.startsWith('face')));
   const tracks = session.tracker.update(detections, Date.now(), frame.kind === 'image',
     frame.motionTracks ? new Map(frame.motionTracks.map(track => [track.id, track.box])) : undefined,
@@ -592,7 +606,7 @@ async function analyze(frame: FramePacket): Promise<void> {
     (frame.kind === 'image' && ((settings.imageSkinThresholdEnabled && !settings.imageSkinThresholdIncludeFace) ||
       ['face', 'either', 'both'].includes(settings.imageDetectionGate) ||
       settings.imageCoverage === 'whole-body' ||
-      (settings.imageCoverage === 'regions' && hasFaceEffects(settings))));
+      (settings.imageCoverage === 'regions' && (hasFaceEffects(settings) || hasThresholdFaceOpenings(settings)))));
   const diagnostics = { model: genderChoice, people: tracks.length, faces: 0, associated: 0,
     faceGenderAttempts: 0, bodyGenderAttempts: 0, attempted: 0, accepted: 0,
     error: undefined as string | undefined };
@@ -716,6 +730,7 @@ async function analyze(frame: FramePacket): Promise<void> {
   const compositionMs = performance.now() - compositionAt;
   session.last = { frame: { ...frame, rgba: new Uint8Array(0), faceRgba: undefined }, tracks, categories, bodyRegions: bodyRegions.map, composition, faceAssociations, detectedFaces, faceLabels };
   session.kind = frame.kind;
+  session.videoAdvanced = frame.kind === 'video' && settings.advancedVideoMode;
   session.imageAnalysis = frame.kind === 'image' ? imageAnalysisKey(settings) : undefined;
   session.lastBytes = side * side * (5 * composition.observations.length + 5) + tracks.length * side * side * 4 + (bodyRegions.map?.byteLength ?? 0);
   if (cacheEntry && !reused) keepImage(cacheEntry);
@@ -736,7 +751,7 @@ async function analyze(frame: FramePacket): Promise<void> {
     genderPreprocess: genderStages.preprocess, genderRun: genderStages.run, genderDecode: genderStages.decode,
     total: performance.now() - started, backend: person?.getBackend() ?? 'cache', faceBackend: faces?.getBackend(),
     genderBackend: (bodyGender ? bodyGenderModels.get(bodyGender)?.getBackend() : undefined) ?? genderModel?.getBackend(),
-    semanticBackend: frame.kind === 'video'
+    semanticBackend: frame.kind === 'video' && !settings.advancedVideoMode
       ? 'skipped' : semanticClient?.getBackend() ?? semantic?.getBackend() ?? 'cache',
     yoloSize: side, yunetSize: settings.yunetSize, faceCaptureSize: frame.faceSize,
     onnxThreads: onnxThreads ?? Math.min(4, Math.max(2, Math.floor(navigator.hardwareConcurrency / 4))),

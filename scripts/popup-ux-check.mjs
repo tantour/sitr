@@ -171,6 +171,27 @@ try {
   assert.deepEqual(await popup.evaluate(() => {
     const p = window.mock.settings.personPolicies.male; return [p.hair, p.face, p.skin.neck, p.skin.torso, p.otherSkin];
   }), ['show','show','show','show','show']);
+  await popup.locator('[data-person-area=chest]').focus(); await popup.keyboard.press('Enter');
+  await popup.locator('#partThresholdTarget').selectOption('part');
+  await popup.waitForFunction(() => window.mock.settings.personPolicies.male.partThresholds?.some(rule => rule.area === 'chest' && rule.percent === 50 && rule.target === 'part'));
+  await popup.locator('#partThresholdPercent').fill('65'); await popup.locator('#partThresholdPercent').dispatchEvent('change');
+  await popup.waitForFunction(() => window.mock.settings.personPolicies.male.partThresholds[0].percent === 65);
+  await popup.locator('[data-person-area=belly]').click();
+  await popup.locator('#partThresholdTarget').selectOption('body');
+  await popup.waitForFunction(() => window.mock.settings.personPolicies.male.partThresholds?.some(rule => rule.area === 'belly' && rule.target === 'body'));
+  assert.equal(await popup.locator('#partThresholdFace').inputValue(), 'black');
+  await popup.locator('#partThresholdFace').selectOption('show');
+  await popup.waitForFunction(() => window.mock.settings.personPolicies.male.partThresholds.some(rule => rule.area === 'belly' && rule.face === 'show'));
+  await popup.locator('#femalePolicyTab').click();
+  assert.equal(await popup.locator('#partThresholdTarget').inputValue(), 'off');
+  await popup.locator('#malePolicyTab').click();
+  assert.equal(await popup.locator('#partThresholdTarget').inputValue(), 'body');
+  await popup.locator('#partThresholdTarget').selectOption('off');
+  await popup.locator('#personAreaSelect').selectOption('chest');
+  assert.equal(await popup.locator('#partThresholdPercent').inputValue(), '65');
+  await popup.locator('#partThresholdControls').scrollIntoViewIfNeeded();
+  await popup.screenshot({path:resolve(review,'part-threshold-popup.png'),animations:'disabled'});
+  await popup.locator('#partThresholdTarget').selectOption('off');
   await popup.locator('[data-person-area=groin]').focus(); await popup.keyboard.press('Enter');
   await popup.locator('[data-person-action=hide]').click();
   await popup.waitForFunction(() => window.mock.settings.personPolicies.male.skin.groin === 'hide');
@@ -210,13 +231,49 @@ try {
   await popup.locator('#saveStatus').filter({ hasText:'Could not save' }).waitFor();
   assert.equal(await popup.locator('[data-person-action=blur]').getAttribute('aria-pressed'),'true');
   await popup.locator('#videosTab').click();
-  await popup.locator('#videoPolicy-male').selectOption('blur');
+  await popup.locator('#videoMaleTab').click();
+  await popup.locator('[data-video-area=whole]').focus(); await popup.keyboard.press('Enter');
+  await popup.locator('[data-video-action=blur]').click();
   await popup.waitForFunction(() => window.mock.settings.personPolicies.male.video === 'blur');
   await popup.locator('#videoEffectOptions > summary').click();
   await popup.locator('#videoEffectIntensity').fill('40'); await popup.locator('#videoEffectIntensity').dispatchEvent('change');
   await saved(popup,'videoEffectIntensity',40);
   await popup.evaluate(() => document.querySelector('main').scrollTop = 0);
+  await popup.locator('[data-video-action=blur]').scrollIntoViewIfNeeded();
   await popup.screenshot({path:resolve(review,'person-editor-video.png'),animations:'disabled'});
+  assert.equal(await popup.locator('#advancedVideoMode').isChecked(), false);
+  await popup.locator('#advancedVideoMode').check(); await saved(popup, 'advancedVideoMode', true);
+  assert.equal(await popup.locator('#standardVideoControls').isVisible(), false);
+  for (const [field, value] of [['videoSkin','show'], ['videoFace','hide'], ['videoHair','hide']]) {
+    await popup.locator('#videoAreaSelect').selectOption({videoSkin:'body',videoFace:'face',videoHair:'hair'}[field]);
+    await popup.locator(`[data-video-action=${value}]`).click();
+    await popup.waitForFunction(({field,value}) => window.mock.settings.personPolicies.male[field] === value, {field,value});
+  }
+  await popup.locator('#videoFemaleTab').click();
+  for (const area of ['face','hair']) {
+    await popup.locator('#videoAreaSelect').selectOption(area);
+    assert.equal(await popup.locator('[data-video-action=show]').getAttribute('aria-pressed'),'true');
+  }
+  await popup.locator('#videoMaleTab').focus(); await popup.keyboard.press('ArrowLeft');
+  assert.equal(await popup.locator('#videoFemaleTab').getAttribute('aria-selected'),'true');
+  await popup.locator('#videoMaleTab').click();
+  await popup.locator('[data-video-area=hair]').focus(); await popup.keyboard.press('Enter');
+  assert.equal(await popup.locator('[data-video-action=hide]').getAttribute('aria-pressed'),'true');
+  await popup.locator('#showAllVideoAreas').click();
+  await popup.waitForFunction(() => ['videoSkin','videoFace','videoHair'].every(field => window.mock.settings.personPolicies.male[field] === 'show'));
+  assert.equal(await popup.evaluate(() => window.mock.settings.personPolicies.male.video),'blur');
+  assert.equal(await popup.evaluate(() => window.mock.settings.personPolicies.male.face),'blur');
+  await popup.locator('#hideAllVideoAreas').click();
+  await popup.waitForFunction(() => ['videoSkin','videoFace','videoHair'].every(field => window.mock.settings.personPolicies.male[field] === 'hide'));
+  await popup.locator('#videoAreaSelect').selectOption('body');
+  await popup.locator('[data-video-action=show]').click();
+  await popup.locator('#videoSkinExpansion').fill('9'); await popup.locator('#videoSkinExpansion').dispatchEvent('change');
+  await saved(popup, 'videoSkinExpansion', 9);
+  await popup.evaluate(() => document.querySelector('main').scrollTop = 0);
+  await popup.locator('#videoAreaSelect').scrollIntoViewIfNeeded();
+  await noOverflow(popup,true); await popup.screenshot({path:resolve(review,'advanced-video-popup.png'),animations:'disabled'});
+  await popup.locator('#advancedVideoMode').uncheck(); await saved(popup,'advancedVideoMode',false);
+  assert.equal(await popup.locator('[data-video-action=blur]').getAttribute('aria-pressed'),'true');
   await popup.locator('#toggleSite').click(); await saved(popup,'siteExceptions',['example.com']);
   await popup.locator('#toggleSite').click(); await saved(popup,'siteExceptions',[]);
   await popup.locator('#openSettings').click();
@@ -234,6 +291,8 @@ try {
   await desktop.locator('#malePolicyTab').click(); await desktop.locator('#showAllAreas').click();
   await desktop.locator('#personAreaSelect').selectOption('thighs'); await desktop.locator('[data-person-action=hide]').click();
   await desktop.waitForFunction(() => window.mock.settings.personPolicies.male.skin.thighs === 'hide');
+  await desktop.locator('#personAreaSelect').selectOption('belly');
+  await desktop.locator('#partThresholdTarget').selectOption('body');
   await noOverflow(desktop,true); await desktop.screenshot({path:resolve(review,'person-editor-desktop.png'),animations:'disabled'});
   const arabic = await open({hash:'#settings/coverage',preferences:{language:'ar',theme:'dark'},viewport:{width:400,height:850}});
   await arabic.locator('#bodyPixEnabled').check();
@@ -241,6 +300,8 @@ try {
   await arabic.locator('#malePolicyTab').click(); await arabic.locator('#showAllAreas').click();
   await arabic.locator('#personAreaSelect').selectOption('thighs'); await arabic.locator('[data-person-action=hide]').click();
   await arabic.waitForFunction(() => window.mock.settings.personPolicies.male.skin.thighs === 'hide');
+  await arabic.locator('#personAreaSelect').selectOption('chest');
+  await arabic.locator('#partThresholdTarget').selectOption('part');
   await arabic.evaluate(() => { const main = document.querySelector('main'); main.scrollTop += document.querySelector('#personEditor').getBoundingClientRect().top - main.getBoundingClientRect().top - 12; });
   await noOverflow(arabic,true); await arabic.screenshot({path:resolve(review,'person-editor-ar-narrow.png'),animations:'disabled'});
   for (const [language,theme,file] of [['en','dark','person-editor-en-dark.png'],['ar','light','person-editor-ar-light.png']]) {
@@ -252,6 +313,21 @@ try {
     await variant.evaluate(() => document.querySelector('main').scrollTop = 0);
     await noOverflow(variant,true); await variant.screenshot({path:resolve(review,file),animations:'disabled'});
   }
+  const advancedDesktop = await open({hash:'#settings/coverage',patch:{advancedVideoMode:true},viewport:{width:1180,height:1080}});
+  await noOverflow(advancedDesktop,true); await advancedDesktop.screenshot({path:resolve(review,'advanced-video-desktop.png'),animations:'disabled'});
+  await advancedDesktop.locator('#videoEditor').screenshot({path:resolve(review,'video-editor-areas.png'),animations:'disabled'});
+  const thresholdExample = await open({hash:'#settings/coverage',patch:{imageBodyRegionMode:'faster'},viewport:{width:1180,height:1320}});
+  await thresholdExample.locator('#malePolicyTab').click(); await thresholdExample.locator('#showAllAreas').click();
+  await thresholdExample.locator('#personAreaSelect').selectOption('belly');
+  await thresholdExample.locator('#partThresholdTarget').selectOption('body');
+  await thresholdExample.locator('#partThresholdFace').selectOption('show');
+  await thresholdExample.waitForFunction(() => window.mock.settings.personPolicies.male.partThresholds?.some(rule => rule.area === 'belly' && rule.percent === 50 && rule.face === 'show'));
+  await thresholdExample.locator('#personEditor').screenshot({path:resolve(review,'part-threshold-body.png'),animations:'disabled'});
+  const advancedArabic = await open({hash:'#settings/coverage',preferences:{language:'ar',theme:'dark'},patch:{advancedVideoMode:true},viewport:{width:400,height:850}});
+  await advancedArabic.locator('#videoPanel').scrollIntoViewIfNeeded();
+  assert.equal(await advancedArabic.locator('#advancedVideoMode').isChecked(),true);
+  assert.match(await advancedArabic.locator('#advancedVideoHelp').textContent(), /يستهلك أداء/);
+  await noOverflow(advancedArabic,true); await advancedArabic.screenshot({path:resolve(review,'advanced-video-ar.png'),animations:'disabled'});
   assert.equal(await arabic.locator('html').getAttribute('dir'),'rtl');
   const untranslated = await arabic.evaluate(() => {
     const walker = document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT), remaining=[];
@@ -262,7 +338,7 @@ try {
   assert.deepEqual(untranslated,[],'All Arabic controls translated');
   await arabic.locator('#uiLanguage').selectOption('en');
   await arabic.waitForFunction(() => document.documentElement.lang === 'en' && !document.querySelector('#uiLanguage').disabled);
-  assert.equal(await arabic.locator('#personAreaTitle').textContent(),'Thighs');
+  assert.equal(await arabic.locator('#personAreaTitle').textContent(),'Chest');
   const revision = await arabic.evaluate(() => window.mock.settings.revision);
   await arabic.locator('#uiTheme').selectOption('light');
   await arabic.waitForFunction(() => !document.querySelector('#uiTheme').disabled);
@@ -302,11 +378,32 @@ try {
     await ui.waitForFunction(async () => (await chrome.storage.local.get('settings')).settings.personPolicies.male.skin.groin === 'hide');
     await ui.locator('#personAreaSelect').selectOption('face'); await ui.locator('[data-person-action=blur]').click();
     await ui.waitForFunction(async () => (await chrome.storage.local.get('settings')).settings.personPolicies.male.face === 'blur');
+    await ui.locator('#personAreaSelect').selectOption('belly');
+    await ui.locator('#partThresholdTarget').selectOption('body');
+    await ui.waitForFunction(async () => (await chrome.storage.local.get('settings')).settings.personPolicies.male.partThresholds?.some(rule => rule.area === 'belly' && rule.target === 'body' && rule.percent === 50));
+    await ui.locator('#partThresholdFace').selectOption('show');
+    await ui.locator('#advancedVideoMode').check();
+    await ui.locator('#videoMaleTab').click();
+    for (const area of ['face','hair']) {
+      await ui.locator('#videoAreaSelect').selectOption(area);
+      await ui.locator('[data-video-action=hide]').click();
+    }
+    await ui.waitForFunction(async () => { const s=(await chrome.storage.local.get('settings')).settings; return s.advancedVideoMode && s.personPolicies.male.videoFace === 'hide' && s.personPolicies.male.videoHair === 'hide'; });
     await ui.reload(); await ui.locator('#saveStatus').filter({hasText:'Saved automatically'}).waitFor();
     await ui.locator('#malePolicyTab').click();
     await ui.locator('#personAreaSelect').selectOption('face');
     assert.equal(await ui.locator('[data-person-action=blur]').getAttribute('aria-pressed'),'true');
     assert.deepEqual(await ui.evaluate(async () => { const p=(await chrome.storage.local.get('settings')).settings.personPolicies.male; return [p.skin.thighs,p.skin.groin,p.skin.torso,p.skin.neck,p.hair,p.face]; }),['hide','hide','show','show','show','blur']);
+    await ui.locator('#personAreaSelect').selectOption('belly');
+    assert.equal(await ui.locator('#partThresholdTarget').inputValue(), 'body');
+    assert.equal(await ui.locator('#partThresholdPercent').inputValue(), '50');
+    assert.equal(await ui.locator('#partThresholdFace').inputValue(),'show');
+    assert.equal(await ui.locator('#advancedVideoMode').isChecked(),true);
+    await ui.locator('#videoMaleTab').click();
+    for (const area of ['face','hair']) {
+      await ui.locator('#videoAreaSelect').selectOption(area);
+      assert.equal(await ui.locator('[data-video-action=hide]').getAttribute('aria-pressed'),'true');
+    }
     console.log('PASS: real extension policy migration and persistence across reload.');
   } finally { await extension?.close(); if(!profile.startsWith(cacheRoot+sep)||!profile.split(sep).at(-1).startsWith('popup-ux-profile-')) throw Error('Unsafe profile cleanup'); await rm(profile,{recursive:true,force:true}); }
 } finally { await browser.close(); await new Promise(done => server.close(done)); }

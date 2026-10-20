@@ -37,7 +37,7 @@ try {
     const { png, ...metrics } = result;
     await writeFile(resolve(cache, `groin-${fixture.name}-${mode}${mirror ? '-mirror' : ''}.png`), Buffer.from(png));
     results.push({ fixture: fixture.name, mode, mirror, ...metrics });
-    assert.equal(result.clothingLabelled, 0, 'Actual skin decoder must leave every clothing pixel unlabelled');
+    assert.equal(result.clothingCovered, 0, 'Ordinary skin coverage must leave every clothing pixel visible');
     if (fixture.name === 'torso-crop-man') assert.equal(result.groinPixels, 0, 'No fabricated pelvis on a torso-only crop');
     console.log(JSON.stringify(results.at(-1)));
   }
@@ -52,9 +52,10 @@ try {
     if (result.fixture === 'seated-man' && result.mode === 'finer' && result.mirror)
       assert.equal(result.sample[1].label, 0, 'Missing foreground must remain unknown');
     else assert.equal(result.sample[1].label, 5, 'Thigh landmark must be separate from torso');
-    assert.equal(result.sample[2].label, 1, 'Chest must remain torso');
+    assert([10, 11].includes(result.sample[2].label), 'Torso landmark must remain chest/belly, separate from the pelvis');
   }
-  console.log('PASS: clothed male anatomy probes, mirrors, both variants, clothing exclusion and crop abstention.');
+  assert(results.some(result => result.clothingLabelled > 0), 'Anatomy must include clothes for threshold measurements');
+  console.log('PASS: clothed male anatomy probes, mirrors, both variants, chest/belly labels, skin-only clothing exclusion and crop abstention.');
 } finally {
   await context?.close();
   if (!profile.startsWith(cache + sep) || !profile.split(sep).at(-1).startsWith('groin-profile-')) throw Error('Unsafe profile cleanup');

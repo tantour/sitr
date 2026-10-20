@@ -1,5 +1,12 @@
 # Prototype verification record — 2026-09-28
 
+Current release note (0.5.2, October 20, 2026): the measurements below describe
+their historical builds and fixtures. Optional Advanced video mode adds MediaPipe
+to sampled video frames and is heavy on performance; face/hair masks share that
+pass. Standard video still skips semantic inference, and videos always skip
+BodyPix anatomy. Real-model regression checks verify the new paths, not sustained
+playback speed or accuracy across content. No new release-wide FPS claim is made.
+
 Machine: Intel Core i5-8250U @ 1.60 GHz, 20 GiB RAM. Browser: Playwright Chrome for Testing 153 headless on Windows. GPU adapter, driver, CPU/GPU utilization, thermal state, and dropped video frames were not measured.
 
 | Check | Observation |

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Sitr",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Private image and video protection, processed locally.",
   "minimum_chrome_version": "148",
   "message_serialization": "structured_clone",

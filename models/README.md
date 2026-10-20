@@ -2,12 +2,13 @@
 
 ## Install the release bundle (recommended)
 
-Download `sitr-0.5.1-models.zip` and `SHA256SUMS.txt` from the
-[matching release](https://github.com/tantour/sitr/releases/tag/v0.5.1). This
+Download `sitr-0.5.2-models.zip` and `SHA256SUMS.txt` from the
+[matching release](https://github.com/tantour/sitr/releases/tag/v0.5.2). This
 source requires fifteen pinned models, including both optional BodyPix variants.
 
-**Use the matching 0.5.1 bundle.** Both BodyPix exports restore original pose and
-short-offset heads for groin and upper-thigh geometry, changing their hashes.
+**Use the matching 0.5.2 bundle.** Model artifact hashes and weights are unchanged
+from 0.5.1, so its model files are also compatible. Both BodyPix exports include
+the original pose and short-offset heads for groin and upper-thigh geometry.
 The 0.5.0 bundle contains dense-only graphs and cannot satisfy these pins; the
 0.4.2 bundle also lacks the anatomy models. Original source inputs and hashes
 remain in the bundle for reproducible exports.
@@ -16,7 +17,7 @@ Use Node.js 22.12+:
 
 ```sh
 npm ci
-npm run models -- --archive /path/to/sitr-0.5.1-models.zip
+npm run models -- --archive /path/to/sitr-0.5.2-models.zip
 npm run models
 npm run build
 ```

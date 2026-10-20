@@ -4,13 +4,14 @@ import { normalizeSettings, normalizeSiteException, resolveYoloSize, siteIsExcep
 import { mediaSummary, number, percent, t } from './localization';
 import { initializeUiPreferences } from './preferences';
 import { initializePersonEditor } from './personEditor';
-import { editablePolicies, genderPolicy, hasImageCoverage } from '../config/personPolicy';
+import { initializeVideoEditor } from './videoEditor';
+import { editablePolicies, genderPolicy, hasAdvancedVideoCoverage, hasImageCoverage } from '../config/personPolicy';
 import { initializeEngineStatus } from './engineStatus';
 
-const fields = ['enabled', 'images', 'videos', 'videoPlayback', 'videoDetector', 'imageCoverage', 'imageDetectionGate', 'imageWholeBodyEffect', 'imageEffectGrayscale', 'imageFaceEffectGrayscale', 'videoEffectGrayscale', 'automaticGender', 'imageGenderModel', 'videoGenderModel', 'faceAssociation', 'faceAssociationMode', 'debugOverlay', 'imageUnknown', 'videoUnknown', 'performance', 'onnxThreads'] as const;
+const fields = ['enabled', 'images', 'videos', 'videoPlayback', 'videoDetector', 'advancedVideoMode', 'imageCoverage', 'imageDetectionGate', 'imageWholeBodyEffect', 'imageEffectGrayscale', 'imageFaceEffectGrayscale', 'videoEffectGrayscale', 'automaticGender', 'imageGenderModel', 'videoGenderModel', 'faceAssociation', 'faceAssociationMode', 'debugOverlay', 'imageUnknown', 'videoUnknown', 'performance', 'onnxThreads'] as const;
 const skinToggleFields = ['imageBodyRegionMode'] as const;
 const thresholdFields = ['yoloConfidence', 'faceDetectionConfidence', 'minFaceSizePx', 'genderConfidence', 'smallFaceCutoffPx', 'smallFaceConfidence', 'faceCoverage', 'faceMargin', 'centerMaskConfidence'] as const;
-const expansionFields = ['imageExpansion', 'videoExpansion'] as const;
+const expansionFields = ['imageExpansion', 'videoExpansion', 'videoSkinExpansion'] as const;
 const effectIntensityFields = ['imageEffectIntensity', 'videoEffectIntensity'] as const;
 const resolutionSteps = {
   yoloImageSize: ['auto', 256, 320, 416],
@@ -22,6 +23,10 @@ type PageStatus = { version: string; media: number; analyzed: number; detected: 
 const settingsView = location.hash.startsWith('#settings');
 let settings: Settings;
 const personEditor = initializePersonEditor(() => settings, async (patch, control) => {
+  const saved = await persist(patch, control);
+  updateMaskControls(); updateProtectionState(); return saved;
+});
+const videoEditor = initializeVideoEditor(() => settings, async (patch, control) => {
   const saved = await persist(patch, control);
   updateMaskControls(); updateProtectionState(); return saved;
 });
@@ -107,14 +112,19 @@ function updateMaskControls(): void {
   element('imageEffectOptions').hidden = select('imageWholeBodyEffect').value === 'black';
   element('videoEffectOptions').hidden = ![genderPolicy(settings, 'female').video, genderPolicy(settings, 'male').video].some(effect => effect === 'blur' || effect === 'checkerboard');
   const fastVideo = select('videoDetector').value === 'fast-box';
+  const advancedVideo = input('advancedVideoMode').checked;
+  element('advancedVideoControls').hidden = !advancedVideo;
+  element('standardVideoControls').hidden = advancedVideo;
+  element('standardVideoExpansionControl').hidden = advancedVideo;
   element('yoloVideoSizeControl').hidden = fastVideo;
   element('faceAssociationModeControl').hidden = fastVideo;
-  element('videoCoverageHelp').textContent = t(fastVideo
+  element('videoCoverageHelp').textContent = t(advancedVideo ? 'Advanced video mode covers chosen skin, face and hair inside detected people. Heavy on performance; fast motion can outrun a mask.' : fastVideo
     ? 'Video covers selected people with expanded boxes, including faces. Fast motion can still outrun a box.'
     : "Video covers selected people's full silhouettes, including faces. Fast motion can still outrun a mask.");
   element('imagesDisabled').hidden = input('images').checked;
   element('videosDisabled').hidden = input('videos').checked;
   personEditor.refresh();
+  videoEditor.refresh();
 }
 
 function updateProtectionState(): void {
@@ -122,7 +132,8 @@ function updateProtectionState(): void {
   const skipped = !settingsView && !!currentHost && siteIsExcepted(currentHost, settings.siteExceptions);
   const noPeople = !['female', 'male'].some(gender => {
     const policy = genderPolicy(settings, gender as 'female' | 'male');
-    return input('images').checked && hasImageCoverage(policy) || input('videos').checked && policy.video !== 'show';
+    return input('images').checked && hasImageCoverage(policy) || input('videos').checked &&
+      (settings.advancedVideoMode ? hasAdvancedVideoCoverage(policy) : policy.video !== 'show');
   });
   const noMedia = !input('images').checked && !input('videos').checked;
   const paused = !enabled || skipped || noPeople || noMedia;
