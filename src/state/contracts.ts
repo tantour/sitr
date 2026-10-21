@@ -87,6 +87,8 @@ export interface AnalysisResult {
   acquisitionStartedAtMs?: number;
   capturedAtMs: number;
   analyzedAtMs: number;
+  /** Video face capture can wait until classification is due again. */
+  nextFaceCheckAtMs?: number;
   settingsRevision: number;
   black: boolean;
   reason: string;
@@ -114,7 +116,7 @@ export interface AnalysisResult {
     bodyRegionBackend?: string; bodyRegionModel?: BodyRegionMode;
     facePreprocess?: number; faceRun?: number; faceDecode?: number;
     genderPreprocess?: number; genderRun?: number; genderDecode?: number;
-    total: number; backend: string; faceBackend?: string; genderBackend?: string; semanticBackend: string;
+    total: number; backend: string; faceBackend?: string; genderBackend?: string; semanticBackend: string; semanticDevice?: string;
     yoloSize?: number; yunetSize?: number; faceCaptureSize?: number;
     onnxThreads?: number; semanticParallel?: boolean; isolated: boolean };
 }

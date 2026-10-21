@@ -4,6 +4,7 @@ export class SemanticClient {
   private worker?: Worker;
   private nextId = 0;
   private backend = 'unknown';
+  private device?: string;
   private pending = new Map<number, { resolve: (value: Uint8Array) => void; reject: (error: Error) => void }>();
 
   async initialize(preference: 'auto' | 'cpu'): Promise<void> {
@@ -11,11 +12,12 @@ export class SemanticClient {
     this.worker = worker;
     await new Promise<void>((resolve, reject) => {
       const timer = self.setTimeout(() => reject(new Error('Semantic worker initialization timed out')), 20000);
-      worker.onmessage = (event: MessageEvent<{ type: string; backend?: string; id?: number; categories?: Uint8Array; message?: string }>) => {
+      worker.onmessage = (event: MessageEvent<{ type: string; backend?: string; device?: string; id?: number; categories?: Uint8Array; message?: string }>) => {
         const message = event.data;
         if (message.type === 'ready') {
           clearTimeout(timer);
           this.backend = message.backend ?? 'unknown';
+          this.device = message.device;
           resolve();
         } else if (message.type === 'error' && message.id === undefined) {
           clearTimeout(timer);
@@ -49,5 +51,6 @@ export class SemanticClient {
   }
 
   getBackend(): string { return this.backend; }
+  getDevice(): string | undefined { return this.device; }
   dispose(): void { this.worker?.terminate(); this.worker = undefined; }
 }

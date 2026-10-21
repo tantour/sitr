@@ -59,7 +59,20 @@ try {
           } });
         };
         const standard = await analyze(false), advanced = await analyze(true);
-        const key = advanced.key;
+        // Cold CPU initialization can outlast the lost-track window. Establish
+        // a second real observation before testing trusted-motion reuse.
+        const stable = await analyze(true);
+        const projected = await request({ type: 'analyze', settings, frame: {
+          key: { ...stable.key, sequence: ++sequence }, kind: 'video', width: side, height: side,
+          mediaTimeSec: stable.mediaTimeSec + .033, capturedAtMs: stable.capturedAtMs + 33, rgba: rgba.slice(),
+          motionTracks: stable.tracks.map(track => ({ id: track.id, box: track.box })),
+        } });
+        if (projected.timingsMs.backend !== 'motion' || projected.timingsMs.person !== 0 || projected.timingsMs.semantic <= 0)
+          throw Error(`Reliable motion should reuse person ownership while running fresh semantics: ${JSON.stringify({ detector, standard: standard.tracks.map(t => t.id), advanced: advanced.tracks.map(t => t.id), projected: projected.tracks.map(t => t.id), timings: projected.timingsMs })}`);
+        const key = projected.key;
+        const labeled = await request({ type: 'label', key, trackId: projected.tracks[0].id, label: 'male', settings });
+        if (!labeled.tracks.some(track => track.id === projected.tracks[0].id && track.label === 'male' && track.labelUsable))
+          throw Error('Manual labels must immediately update a projected snapshot');
         for (const policy of Object.values(settings.personPolicies)) { policy.videoSkin = 'show'; policy.videoFace = 'hide'; }
         const face = await request({ type: 'settings', key, settings });
         for (const policy of Object.values(settings.personPolicies)) { policy.videoFace = 'show'; policy.videoHair = 'hide'; }
@@ -107,7 +120,7 @@ try {
   assert.equal(result.thresholds.inactive.faceEffect, result.thresholds.black.faceEffect, 'Inactive thresholds restore ordinary face effects');
   assert.equal(result.thresholds.inactive.bodyRegionBackend, 'cache', 'Percentage edits must reuse the anatomy map');
   console.log(JSON.stringify(result, null, 2));
-  console.log('PASS: both detectors add MediaPipe only in advanced mode; independent skin/face/hair masks, cached edits and no body-part inference.');
+  console.log('PASS: both detectors add MediaPipe only in advanced mode; fresh semantics with motion-reused ownership, immediate manual labels, independent skin/face/hair masks, cached edits and no body-part inference.');
   console.log('PASS: image part thresholds black/show faces after expansion, override ordinary effects and reuse cached anatomy for percentage edits.');
 } finally {
   await browser?.close();

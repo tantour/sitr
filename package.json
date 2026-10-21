@@ -14,6 +14,7 @@
     "check": "npm run typecheck && npm test && node scripts/check-docs.mjs",
     "models": "node scripts/models.mjs",
     "test:browser": "node scripts/browser-checks.mjs",
+    "bench:video": "node scripts/advanced-video-performance-probe.mjs",
     "verify:release": "node scripts/verify-release.mjs",
     "release": "npm run check && npm run build && npm run test:browser && node scripts/package-release.mjs"
   },

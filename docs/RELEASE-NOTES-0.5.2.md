@@ -25,6 +25,11 @@ masks while keeping the existing person detector.
   YOLO silhouettes or fast person boxes. Body skin excludes faces; face and hair
   have separate Show/Hide choices. All three masks share one semantic pass.
   Videos do not run BodyPix part segmentation or image thresholds.
+- **Advanced video performance:** remove the inherited 4–8 Hz cap, analyze
+  available frames as quickly as inference permits, reuse reliable person motion for at
+  most 250 ms between detector passes, and capture large face inputs only when
+  classification is due. Request high-performance MediaPipe graphics and report
+  the active semantic GPU adapter. Add a playing-video benchmark.
 - **Visual video editor:** Female/Male tabs, clickable person diagrams, keyboard
   area selection, action buttons and advanced Show all / Hide all. Separate
   expansion respects shown regions. Standard whole-person effects are retained
@@ -53,8 +58,10 @@ all three ZIPs and **SHA256SUMS.txt** together under tag **v0.5.2**.
 
 ## Validation
 
-TypeScript, **189 unit tests**, all **18 browser checks**, and refreshed
-English/Arabic UI screenshots passed. npm audit reported **zero vulnerabilities**.
+Initial release preparation passed TypeScript, **189 unit tests**, all **18
+browser checks**, and refreshed English/Arabic UI screenshots. The performance
+follow-up expands unit coverage to **194 tests** and reruns affected browser
+checks; see the validation record for current evidence. npm audit reported **zero vulnerabilities**.
 Checks include both packaged video detectors with independent semantic masks,
 threshold face overrides, cached policy edits, model fallback and local WebRTC
 streams. Archives include matching source, pinned models and SHA-256 checksums.

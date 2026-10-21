@@ -17,7 +17,8 @@ import { SemanticClient } from '../vision/semanticClient';
 import type { OptionalFaceDetector } from '../vision/face';
 import { associateFaces, associateFacesToBoxes, type FaceAssociation } from '../vision/faceAssociation';
 import { ByteTracker } from '../vision/tracker';
-import { canUseBodyGender, genderCheckDue } from '../vision/genderPolicy';
+import { VideoPersonCadence } from '../vision/videoPersonCadence';
+import { canUseBodyGender, genderCheckDue, nextVideoGenderCheck } from '../vision/genderPolicy';
 import { personAppearance } from '../vision/appearance';
 import { compose, dilate, pruneIslands, type Composition } from '../rendering/compositor';
 import { faceEllipseMask, openAssociatedFaces, videoPersonMask } from '../rendering/videoMask';
@@ -30,7 +31,7 @@ import type { BodyRegionDiagnostics } from '../state/contracts';
 import { MODEL_SIZES, BODY_REGION_MODES, BODY_GENDER_MODELS, warmModels, warmupPixels } from '../vision/warmup';
 
 type FaceLabel = { label: Label; labelUsable: boolean };
-type Session = { videoAdvanced?: boolean; epoch: number; tracker: ByteTracker; lastTouched: number; lastBytes: number; kind?: 'image' | 'video'; imageAnalysis?: string; timingsMs?: AnalysisResult['timingsMs']; genderDiagnostics?: AnalysisResult['genderDiagnostics']; bodyRegionDiagnostics?: BodyRegionDiagnostics; last?: { frame: FramePacket; tracks: Track[]; categories: Uint8Array; bodyRegions?: Uint8Array; composition: Composition; faceAssociations?: FaceAssociation[]; detectedFaces?: FaceBox[]; faceLabels?: FaceLabel[] } };
+type Session = { videoPeople: VideoPersonCadence; videoAdvanced?: boolean; epoch: number; tracker: ByteTracker; lastTouched: number; lastBytes: number; kind?: 'image' | 'video'; imageAnalysis?: string; timingsMs?: AnalysisResult['timingsMs']; genderDiagnostics?: AnalysisResult['genderDiagnostics']; bodyRegionDiagnostics?: BodyRegionDiagnostics; last?: { frame: FramePacket; tracks: Track[]; categories: Uint8Array; bodyRegions?: Uint8Array; composition: Composition; faceAssociations?: FaceAssociation[]; detectedFaces?: FaceBox[]; faceLabels?: FaceLabel[] } };
 const sessions = new Map<string, Session>();
 type CachedImage = { key: string; rgba: Uint8Array; faceRgba?: Uint8Array; detections: Awaited<ReturnType<YoloPersonSegmenter['segment']>>;
   categories: Uint8Array; bodyRegions?: Uint8Array; bodyRegionDiagnostics?: BodyRegionDiagnostics; faces?: FaceBox[]; gender?: GenderEstimate[]; genderReady: boolean; bytes: number };
@@ -85,7 +86,7 @@ function getSession(key: FrameKey): Session {
   const prior = sessions.get(key.mediaSessionId);
   if (prior && prior.epoch === key.epoch) { prior.lastTouched = Date.now(); return prior; }
   prior?.tracker.reset();
-  const session: Session = { epoch: key.epoch, tracker: new ByteTracker(key.mediaSessionId), lastTouched: Date.now(), lastBytes: 0 };
+  const session: Session = { videoPeople: new VideoPersonCadence(), epoch: key.epoch, tracker: new ByteTracker(key.mediaSessionId), lastTouched: Date.now(), lastBytes: 0 };
   sessions.set(key.mediaSessionId, session);
   return session;
 }
@@ -530,6 +531,10 @@ async function analyze(frame: FramePacket): Promise<void> {
   const side = resolvePersonSize(settings, frame.kind);
   if (frame.width !== side || frame.height !== side || frame.rgba.length !== side * side * 4 || frame.rgba.byteLength > ENGINE.maxPayloadBytes) throw new Error('Invalid frame dimensions');
   const reused = cachedImage(frame, settings);
+  const session = getSession(frame.key);
+  const detectorSignature = `${side}:${settings.videoDetector}:${settings.yoloConfidence}`;
+  const projected = frame.kind === 'video' && settings.advancedVideoMode
+    ? session.videoPeople.project(frame, detectorSignature, session.tracker.get()) : undefined;
   const person = reused ? undefined : await ensureModels(side, frame.kind === 'image' || settings.advancedVideoMode,
     frame.kind === 'video' && settings.videoDetector === 'fast-box');
   const modelInit = performance.now() - started;
@@ -539,6 +544,7 @@ async function analyze(frame: FramePacket): Promise<void> {
   let genderStages = { preprocess: 0, run: 0, decode: 0 };
   const personTask = (async () => {
     if (reused) return reused.detections;
+    if (projected) return [];
     const at = performance.now();
     const detections = await person!.segment(frame.rgba, settings.yoloConfidence);
     personMs = performance.now() - at;
@@ -575,16 +581,16 @@ async function analyze(frame: FramePacket): Promise<void> {
       detections.reduce((sum, detection) => sum + detection.mask.byteLength, 0) + (bodyRegions.map?.byteLength ?? 0),
   } : undefined;
   const trackingAt = performance.now();
-  const session = getSession(frame.key);
   session.bodyRegionDiagnostics = bodyRegions.diagnostics;
   const imageNeedsFaceMatching = frame.kind === 'image' &&
     (settings.faceAssociation || settings.debugOverlay || settings.imageCoverage === 'whole-body' ||
       (settings.imageSkinThresholdEnabled && !settings.imageSkinThresholdIncludeFace) ||
       (settings.imageCoverage === 'regions' && (hasFaceEffects(settings) || hasThresholdFaceOpenings(settings))) ||
       (settings.automaticGender && settings.imageGenderModel.startsWith('face')));
-  const tracks = session.tracker.update(detections, Date.now(), frame.kind === 'image',
+  const tracks = projected ?? session.tracker.update(detections, Date.now(), frame.kind === 'image',
     frame.motionTracks ? new Map(frame.motionTracks.map(track => [track.id, track.box])) : undefined,
     imageNeedsFaceMatching);
+  if (!projected) session.videoPeople.detected(frame, detectorSignature);
   const trackingMs = performance.now() - trackingAt;
   let faceAssociations: FaceAssociation[] | undefined;
   let detectedFaces: FaceBox[] | undefined;
@@ -593,14 +599,14 @@ async function analyze(frame: FramePacket): Promise<void> {
   const visibleFaceTracks = new Set<string>();
   const genderCheckAt = Date.now();
   const dueTracks = new Set(tracks.filter(track => frame.kind === 'image' || genderCheckDue(track, genderCheckAt)).map(track => track.id));
-  const genderDue = settings.automaticGender && (frame.kind === 'image' ||
+  const genderDue = !projected && settings.automaticGender && (frame.kind === 'image' ||
     dueTracks.size > 0);
   const genderChoice = frame.kind === 'image' ? settings.imageGenderModel : settings.videoGenderModel;
   const faceGender = genderChoice === 'face' || genderChoice.startsWith('face-');
   const bodyGender: BodyGenderModel | undefined = genderChoice.endsWith('paddle') ? 'paddle'
     : genderChoice.endsWith('intel') ? 'intel' : undefined;
   const bodyFallback = genderChoice.startsWith('face-');
-  if (genderDue && frame.kind === 'video') for (const track of tracks)
+  if (genderDue && frame.kind === 'video' && (!faceGender || frame.faceRgba)) for (const track of tracks)
     if (dueTracks.has(track.id)) track.lastGenderCheckAt = genderCheckAt;
   const needsFaces = settings.faceAssociation || (genderDue && faceGender) || settings.debugOverlay ||
     (frame.kind === 'image' && ((settings.imageSkinThresholdEnabled && !settings.imageSkinThresholdIncludeFace) ||
@@ -737,8 +743,10 @@ async function analyze(frame: FramePacket): Promise<void> {
   trimSessions(frame.key.mediaSessionId);
   const renderAt = performance.now();
   const result = render(frame, session, composition);
+  if (frame.kind === 'video' && settings.automaticGender && faceGender)
+    result.nextFaceCheckAtMs = nextVideoGenderCheck(tracks);
   const renderMs = performance.now() - renderAt;
-  const personStages = person?.getLastTimings() ?? { preprocess: 0, run: 0, decode: 0 };
+  const personStages = projected ? { preprocess: 0, run: 0, decode: 0 } : person?.getLastTimings() ?? { preprocess: 0, run: 0, decode: 0 };
   result.timingsMs = { acquire: frame.acquisitionStartedAtMs ? frame.capturedAtMs - frame.acquisitionStartedAtMs : 0,
     modelInit, person: personMs, semantic: semanticMs, tracking: trackingMs, face: faceMs, gender: genderMs,
     composition: compositionMs, render: renderMs,
@@ -749,10 +757,11 @@ async function analyze(frame: FramePacket): Promise<void> {
     bodyRegionBackend: bodyRegions.diagnostics.status === 'cache' ? 'cache' : bodyRegions.diagnostics.backend ?? bodyRegions.diagnostics.status, bodyRegionModel: settings.imageBodyRegionMode,
     facePreprocess: faceStages.preprocess, faceRun: faceStages.run, faceDecode: faceStages.decode,
     genderPreprocess: genderStages.preprocess, genderRun: genderStages.run, genderDecode: genderStages.decode,
-    total: performance.now() - started, backend: person?.getBackend() ?? 'cache', faceBackend: faces?.getBackend(),
+    total: performance.now() - started, backend: projected ? 'motion' : person?.getBackend() ?? 'cache', faceBackend: faces?.getBackend(),
     genderBackend: (bodyGender ? bodyGenderModels.get(bodyGender)?.getBackend() : undefined) ?? genderModel?.getBackend(),
     semanticBackend: frame.kind === 'video' && !settings.advancedVideoMode
       ? 'skipped' : semanticClient?.getBackend() ?? semantic?.getBackend() ?? 'cache',
+    semanticDevice: frame.kind === 'image' || settings.advancedVideoMode ? semanticClient?.getDevice() ?? semantic?.getDevice() : undefined,
     yoloSize: side, yunetSize: settings.yunetSize, faceCaptureSize: frame.faceSize,
     onnxThreads: onnxThreads ?? Math.min(4, Math.max(2, Math.floor(navigator.hardwareConcurrency / 4))),
     semanticParallel: !!semanticClient, isolated: self.crossOriginIsolated };
@@ -827,6 +836,10 @@ self.onmessage = async (event: MessageEvent<WorkerInput>) => {
       settings = message.settings;
       const session = sessions.get(message.key.mediaSessionId);
       if (!session || session.epoch !== message.key.epoch || !session.last || !session.tracker.label(message.trackId, message.label as Label)) throw new Error('Track label unavailable');
+      const snapshot = session.last.tracks.find(track => track.id === message.trackId);
+      const labeled = session.tracker.get().find(track => track.id === message.trackId);
+      if (snapshot && labeled) Object.assign(snapshot, { label: labeled.label, labelUsable: labeled.labelUsable,
+        labelSource: labeled.labelSource, genderConfidence: labeled.genderConfidence });
       send({ type: 'result', result: renderCached(session, settings) });
       return;
     }

@@ -14,7 +14,7 @@ self.onmessage = async (event: MessageEvent<
       const model = new SelfieSemanticSegmenter(request.preference === 'auto');
       await model.initialize();
       segmenter = model;
-      postMessage({ type: 'ready', backend: model.getBackend() });
+      postMessage({ type: 'ready', backend: model.getBackend(), device: model.getDevice() });
       return;
     }
     if (!segmenter) throw new Error('Semantic worker is not initialized');

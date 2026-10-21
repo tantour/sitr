@@ -60,7 +60,18 @@ temporary continuity evidence and resets on scene changes.
 Video uses sampled inference with local motion-based mask translation between
 analyses, not inference on every displayed frame. Advanced mode returns per-track
 semantic masks for the same motion renderer, with independent per-gender skin,
-face and hair actions. Its separate expansion respects explicitly shown areas. The mask renderer handles
+face and hair actions. Advanced capture follows available source frames with
+one request outstanding per video, bounded by inference speed. Reliable motion can translate detector masks between real
+person detections for at most 250 ms; uncertain/new tracks, changed detector
+settings, source epochs and seeks require inference. These projected frames do
+not add detector hits, identity evidence or gender votes. Semantic inference
+still uses fresh pixels. Video face captures follow the next per-track gender
+check, with immediate follow-up capture for new identities; explicit face
+association and diagnostic outlines still request every capture. MediaPipe
+requests a high-performance WebGL2 context and reports its actual GPU renderer
+in timings. Separate-worker semantic overlap remains experimental: it did not
+consistently improve measured throughput on the integrated test GPU.
+Its separate expansion respects explicitly shown areas. The mask renderer handles
 letterboxing, object-fit, effects, diagnostic outlines, and geometry updates.
 CSS backgrounds use a censored image copy with the original layout rules.
 

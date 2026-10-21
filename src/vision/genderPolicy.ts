@@ -4,6 +4,11 @@ import type { Track } from '../state/contracts';
 
 export const VIDEO_GENDER_INTERVAL_MS = 1000;
 
+export function nextVideoGenderCheck(tracks: Track[]): number {
+  return tracks.reduce((next, track) => track.labelSource === 'user' || track.state === 'lost' || track.state === 'ambiguous'
+    ? next : Math.min(next, track.lastGenderCheckAt === undefined ? 0 : track.lastGenderCheckAt + VIDEO_GENDER_INTERVAL_MS), Number.MAX_SAFE_INTEGER);
+}
+
 /** New identities are checked immediately; existing identities get their own one-second cadence. */
 export function genderCheckDue(track: Track, now: number): boolean {
   return track.labelSource !== 'user' && track.state !== 'lost' && track.state !== 'ambiguous' &&

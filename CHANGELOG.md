@@ -5,6 +5,7 @@
 - Add per-gender, per-part image skin thresholds that cover the entire part or body, with Black/Show face choices for whole-body rules. Measure skin against the visible clothed part area and preserve existing Show/Hide actions.
 - Split torso into chest and belly using a body-relative half cut from existing pose/dense anatomy, including rotated and lying-down cases. Inherit saved torso choices and retain an unresolved fallback.
 - Add Advanced video mode, off by default, combining either existing detector with one MediaPipe pass for independent body skin, face and hair masks. Add separate expansion, respect shown regions and skip body-part inference. Clearly label its performance cost.
+- Remove the inherited 4–8 Hz advanced-video cap; analyze available source frames as quickly as inference permits with one request outstanding. Reuse reliably motion-tracked person ownership for at most 250 ms while computing fresh semantic masks, capture face input only when classification is due, request high-performance MediaPipe graphics, and report the actual semantic GPU adapter. Add a reproducible playing-video benchmark.
 - Replace video dropdowns with a visual person editor, gender tabs, keyboard-accessible areas, action buttons and advanced Show all / Hide all. Preserve independent image and standard/advanced video settings.
 - Refresh release notes, README, guides, English/Arabic screenshots and regression checks. Keep model weights and extension permissions unchanged from 0.5.1.
 

@@ -8,6 +8,7 @@ export class SelfieSemanticSegmenter {
   private segmenter?: ImageSegmenter;
   private backend: 'gpu' | 'cpu' = 'cpu';
   private canvas = new OffscreenCanvas(1, 1);
+  private device?: string;
   private lastTimings = { preprocess: 0, run: 0, decode: 0 };
   constructor(private readonly tryGpu = true) {}
   async initialize(): Promise<void> {
@@ -15,10 +16,19 @@ export class SelfieSemanticSegmenter {
     const modelAssetPath = extensionAsset('models/selfie_multiclass_256x256.tflite');
     if (this.tryGpu) {
       try {
+        // MediaPipe otherwise creates a default-power WebGL context, which can
+        // select the integrated adapter even when ONNX uses the discrete GPU.
+        const canvas = new OffscreenCanvas(1, 1);
+        const gl = canvas.getContext('webgl2', { powerPreference: 'high-performance' });
+        if (!gl) throw new Error('WebGL2 unavailable');
+        const debug = gl.getExtension('WEBGL_debug_renderer_info');
+        const device = debug ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)) : undefined;
         this.segmenter = await ImageSegmenter.createFromOptions(files, {
           baseOptions: { modelAssetPath, delegate: 'GPU' },
+          canvas,
           runningMode: 'IMAGE', outputCategoryMask: true, outputConfidenceMasks: false,
         });
+        this.device = device;
         this.backend = 'gpu';
       } catch { this.segmenter = undefined; }
     }
@@ -53,8 +63,9 @@ export class SelfieSemanticSegmenter {
     this.lastTimings = { preprocess: runAt - started, run: decodeAt - runAt, decode: performance.now() - decodeAt };
     return mask;
   }
-  dispose(): void { this.segmenter?.close(); this.segmenter = undefined; }
+  dispose(): void { this.segmenter?.close(); this.segmenter = undefined; this.device = undefined; }
   getBackend(): string { return this.backend; }
+  getDevice(): string | undefined { return this.device; }
   getLastTimings(): { preprocess: number; run: number; decode: number } { return this.lastTimings; }
 }
 

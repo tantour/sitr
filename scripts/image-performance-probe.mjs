@@ -35,8 +35,15 @@ try {
       filter: 'off', revision: current.revision + 1 } });
   });
   await page.waitForFunction(() => document.getElementById('first').dataset.localMediaCensorStatus === 'off');
-  assert.equal(await page.locator('#first').evaluate(image => image.dataset.localMediaCensorTimingsMs), initial,
-    'Video/render changes should not run image models again');
+  const updated = await page.locator('#first').evaluate(image => image.dataset.localMediaCensorTimingsMs);
+  // A filter/render edit may legitimately recompose cached model outputs.
+  // It must not run inference; exact timing-string equality is too strict.
+  if (updated !== initial) {
+    const cached = JSON.parse(updated);
+    assert.equal(cached.backend, 'cache');
+    for (const stage of ['person', 'semantic', 'face', 'gender', 'bodyRegions'])
+      assert.equal(cached[stage], 0, `Render changes reran ${stage}`);
+  }
   await page.evaluate(() => {
     const image = document.createElement('img'); image.id = 'duplicate'; image.width = 320;
     image.src = '/photo.jpg'; document.body.append(image);

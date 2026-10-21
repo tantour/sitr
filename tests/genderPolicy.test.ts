@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Sitr contributors
 import { describe, expect, it } from 'vitest';
 import { ByteTracker } from '../src/vision/tracker';
-import { canUseBodyGender, genderCheckDue } from '../src/vision/genderPolicy';
+import { canUseBodyGender, genderCheckDue, nextVideoGenderCheck } from '../src/vision/genderPolicy';
 
 function trackedPerson() {
   const tracker = new ByteTracker('policy');
@@ -14,6 +14,15 @@ function trackedPerson() {
 }
 
 describe('video classification policy', () => {
+  it('requests large face captures only when an eligible identity needs classification', () => {
+    const { track } = trackedPerson();
+    expect(nextVideoGenderCheck([track])).toBe(0);
+    track.lastGenderCheckAt = 100;
+    expect(nextVideoGenderCheck([track])).toBe(1100);
+    expect(nextVideoGenderCheck([track, trackedPerson().track])).toBe(0);
+    expect(nextVideoGenderCheck([{ ...track, state: 'lost' }, { ...track, labelSource: 'user' }])).toBe(Number.MAX_SAFE_INTEGER);
+    expect(nextVideoGenderCheck([])).toBe(Number.MAX_SAFE_INTEGER);
+  });
   it('checks new identities immediately and each existing identity once per second', () => {
     const { track } = trackedPerson();
     expect(genderCheckDue(track, 0)).toBe(true);

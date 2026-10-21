@@ -104,6 +104,8 @@ In **Videos**, the person diagram controls the whole-person Show/Black/Blur/Pixe
 
 **Advanced video mode is heavy on performance and off by default.** It adds MediaPipe on each analyzed video frame and can update more slowly, especially on CPU or with multiple videos. Its expansion slider covers hidden categories while keeping explicitly shown categories open; larger margins can cover nearby clothing. Switching it off restores the standard video effects.
 
+Advanced masks process available source frames as quickly as inference permits, with one analysis outstanding per video. Reliable motion lets person detection run less often, and face captures follow the classification cadence. Actual speed depends on the active GPU/backend; [benchmark details and commands](docs/VIDEO-PERFORMANCE.md) distinguish mask updates from video playback FPS.
+
 <p><img src="docs/images/settings-advanced-video.png" width="760" alt="Desktop settings with matching visual image and video editors"> <img src="docs/images/settings-advanced-video-ar.png" width="340" alt="Arabic visual video selector and mask expansion in dark mode"></p>
 
 ![Real local fixture with whole-person black coverage](docs/images/coverage-example.png)

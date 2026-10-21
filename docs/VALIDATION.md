@@ -59,6 +59,31 @@ performance, especially on CPU or with several streams. Face and hair share
 that pass. Retaining all model sessions increases idle memory. Meet uses local
 WebRTC fixtures, not a live meeting.
 
+## October 21 advanced-video performance follow-up
+
+The initial mask checks above did not establish usable sustained video speed.
+The follow-up removes the 4–8 Hz advanced capture cap, requests high-performance
+MediaPipe graphics, reuses reliable detector ownership for less than 250 ms
+without adding identity evidence, and avoids large face captures between
+classification checks. The semantic stage still receives fresh frames.
+
+TypeScript and **194 unit tests across 30 files** pass. The five affected browser
+checks were rerun: video compatibility, advanced video, local Meet, faces and
+gender. Advanced video now also verifies real model execution with projected
+ownership and immediate manual labels on a projected frame. Cold CPU model
+startup can expire initial identities; the fixture establishes real repeated
+observations before requiring trusted-motion reuse.
+The normal-image performance/cache probe also passed using GPU MediaPipe,
+including cached recomposition and duplicate-image reuse with no new inference.
+
+The playing-video benchmark separately records fresh mask updates and presented
+frames, timings, visibility, errors and backend details. Measurements on Intel
+UHD 620 are documented in [video performance](VIDEO-PERFORMANCE.md); this host
+does not expose an RTX 3060, so RTX throughput is unverified. The original 18-check
+run remains the initial-release record, not a claim that all 18 were rerun after
+this follow-up. The local build and release archives include the follow-up;
+publication still requires the usual source/tag/release workflow.
+
 [0.5.1 evidence](VALIDATION-0.5.1.md) · [Anatomy evidence](GROIN-VALIDATION.md) ·
 [Area controls](BODY-REGIONS.md) · [Limits](../README.md#supported-media-and-limitations) ·
 [Historical benchmarks](../BENCHMARK.md)

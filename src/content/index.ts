@@ -556,8 +556,11 @@ class MediaController {
     if (meetingPage && !release) {
       video.dataset.localMediaCensorStatus = 'queued'; this.holdVideoMaskOrProtect(); return;
     }
-    const rate = settings.videoDetector === 'fast-box' && !settings.advancedVideoMode ? 12 : ENGINE.modes[settings.performance].initialHz;
-    this.nextCaptureAt = Date.now() + 1000 / rate;
+    // One request stays in flight per video. Advanced masks should follow the
+    // source as quickly as inference allows, rather than inherit the 4–8 Hz
+    // whole-person sampling budget. Never build a backlog of obsolete frames.
+    const rate = settings.videoDetector === 'fast-box' ? 12 : ENGINE.modes[settings.performance].initialHz;
+    this.nextCaptureAt = settings.advancedVideoMode ? 0 : Date.now() + 1000 / rate;
     try {
       // Some decoders initially return a blank frame before reporting taint.
       // Do not accept that as an analyzed, safe cross-origin video.
@@ -566,7 +569,8 @@ class MediaController {
       const size = resolvePersonSize(settings, 'video');
       const rgba = captureSquare(video, video.videoWidth, video.videoHeight, size);
       video.dataset.localMediaCensorCaptureAccess = video.crossOrigin === null ? 'direct' : 'cors';
-      const faceRgba = (settings.automaticGender && settings.videoGenderModel.startsWith('face')) ||
+      const faceRgba = (settings.automaticGender && settings.videoGenderModel.startsWith('face') &&
+        Date.now() >= (this.result?.nextFaceCheckAtMs ?? 0)) ||
         settings.faceAssociation || settings.debugOverlay
         ? captureSquare(video, video.videoWidth, video.videoHeight, settings.faceCaptureSize) : undefined;
       const key = this.key();
