@@ -30,12 +30,13 @@ const fixture = (rotate = 0, offset = 0, legs = true) => {
 };
 
 describe('pelvis geometry from existing clothed part predictions', () => {
-  it.each([0, Math.PI / 6, Math.PI / 2, Math.PI, -Math.PI / 2])('follows the torso at rotation %s and raises the lateral upper thighs', angle => {
+  it.each([0, Math.PI / 6, Math.PI / 2, Math.PI, -Math.PI / 2])('keeps full pelvis width and a shallow vertical extent at rotation %s', angle => {
     const { labels, person, point } = fixture(angle), pelvis = estimatePelvis(labels, grid, [person])[0];
     expect(pelvis).toBeDefined();
     const classify = (x: number, y: number, region = 1) => { const p = point(x, y); return pelvicRegion(region, p.x, p.y, pelvis); };
     expect(classify(.5, .54)).toBe(9); // pelvis still labelled torso by the model
-    expect(classify(.62, .55)).toBe(5); // outer upper thigh, also labelled torso
+    expect(classify(.62, .55)).toBe(9); // lateral pelvis belongs to the full-width band
+    expect(classify(.62,.68,5)).toBe(5); // deeper thigh stays independent
     expect(classify(.5, .3)).toBe(1); // chest/belly remain independent
     expect(classify(.5, .58, 5)).toBe(9); // proximal inner legs complete the band
     expect(classify(.6, .72, 5)).toBe(5);
@@ -67,7 +68,7 @@ describe('pelvis geometry from existing clothed part predictions', () => {
     labels.forEach((label, p) => { if (label) { logits[(label - 1) * grid * grid + p] = 10; foreground[p] = 10; } });
     const semantic = new Uint8Array(side * side).fill(4); // a fully clothed analytical fixture
     const index = (x: number, y: number) => Math.round(y * (side - 1)) * side + Math.round(x * (side - 1));
-    const pelvisPixel = index(.5, .54), thighPixel = index(.62, .55), torsoPixel = index(.5, .3);
+    const pelvisPixel = index(.5, .54), thighPixel = index(.62, .68), torsoPixel = index(.5, .3);
     semantic[pelvisPixel] = semantic[thighPixel] = semantic[torsoPixel] = 2;
     const map = decodeBodyRegions(logits, foreground, grid, semantic, side, [person]);
     expect([map[pelvisPixel], map[thighPixel], map[torsoPixel]]).toEqual([9, 5, 10]);
@@ -78,7 +79,7 @@ describe('pelvis geometry from existing clothed part predictions', () => {
 });
 
 describe('original BodyPix hip, shoulder and knee heads', () => {
-  const poseFixture = () => {
+  const poseFixture = (knees?: [[number,number],[number,number]]) => {
     const heatmaps = new Float32Array(17 * grid * grid).fill(-10), offsets = new Float32Array(34 * grid * grid);
     const place = (channel: number, x: number, y: number) => {
       const gx = Math.round(x * (grid - 1)), gy = Math.round(y * (grid - 1)), p = gy * grid + gx;
@@ -87,7 +88,7 @@ describe('original BodyPix hip, shoulder and knee heads', () => {
       offsets[(channel + 17) * grid * grid + p] = (x - gx / (grid - 1)) * 320;
     };
     place(5, .39, .24); place(6, .61, .24); place(11, .43, .58); place(12, .57, .58);
-    place(13, .43, .82); place(14, .57, .82);
+    place(13, ...(knees?.[0]??[.43,.82] as [number,number])); place(14, ...(knees?.[1]??[.57,.82] as [number,number]));
     return { heatmaps, offsets, inputSide: 321 };
   };
   it('anchors to learned hips and repairs lower-leg labels above the learned knees', () => {
@@ -111,12 +112,23 @@ describe('original BodyPix hip, shoulder and knee heads', () => {
     expect(estimatePosePelvis(poseFixture(), grid, [person, person], dense)).toEqual([undefined, undefined]);
     expect(() => estimatePosePelvis({ ...poseFixture(), offsets: new Float32Array(4) }, grid, [person], dense)).toThrow('pose output grid mismatch');
   });
-  it('follows crossed thighs and stops the groin above the knee line', () => {
-    const { person } = fixture(), pelvis = estimatePosePelvis(poseFixture(), grid, [person], [undefined])[0]!;
-    pelvis.thighs = [{ hip: { x: .43, y: .58 }, knee: { x: .58, y: .82 } },
-      { hip: { x: .57, y: .58 }, knee: { x: .6, y: .82 } }];
-    expect(pelvicRegion(5, .56, .72, pelvis)).toBe(9);
+  it('keeps crossed mid-thighs out of the groin while retaining the hip junction', () => {
+    const { person } = fixture(), pelvis = estimatePosePelvis(poseFixture([[.58,.82],[.6,.82]]), grid, [person], [undefined])[0]!;
+    expect(pelvicRegion(5,.5,.60,pelvis)).toBe(9);
+    expect(pelvicRegion(5, .56, .72, pelvis)).toBe(5);
     expect(pelvicRegion(5, .6, .82, pelvis)).toBe(5);
+    for(const thigh of pelvis.thighs!)for(const t of [.5,.7,.9]){
+      const x=thigh.hip.x+(thigh.knee.x-thigh.hip.x)*t,y=thigh.hip.y+(thigh.knee.y-thigh.hip.y)*t;
+      expect(pelvicRegion(5,x,y,pelvis)).toBe(5);
+    }
+  });
+  it('keeps the whole pelvis width without extending halfway down either thigh',()=>{
+    const {person}=fixture(),pelvis=estimatePosePelvis(poseFixture(),grid,[person],[undefined])[0]!;
+    expect(pelvicRegion(5,.5,.60,pelvis)).toBe(9);
+    expect(pelvicRegion(5,.38,.60,pelvis)).toBe(9);expect(pelvicRegion(5,.62,.60,pelvis)).toBe(9);
+    expect(pelvicRegion(5,.43,.67,pelvis)).toBe(5);expect(pelvicRegion(5,.57,.67,pelvis)).toBe(5);
+    expect(pelvis.groin!.depth).toBeLessThanOrEqual(.24*.30);
+    expect(pelvicRegion(4,.5,.60,pelvis)).toBe(4);
   });
 });
 

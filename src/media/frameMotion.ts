@@ -11,29 +11,43 @@ function median(values: number[]): number {
   return values[Math.floor(values.length / 2)];
 }
 
-/** Sparse, bounded block matching between adjacent displayed video frames. */
+/** Sparse, bounded patch matching between displayed video frames. */
 export function estimateTranslation(previous: Uint8Array, current: Uint8Array, side: number, box: Rect, offsetX = 0, offsetY = 0): { dx: number; dy: number; reliable: boolean } {
   const votesX: number[] = [], votesY: number[] = [];
   for (let gy = 1; gy <= 3; gy++) for (let gx = 1; gx <= 3; gx++) {
-    const x = Math.round((box.x + offsetX + box.width * gx / 4) * side);
-    const y = Math.round((box.y + offsetY + box.height * gy / 4) * side);
-    if (x < 5 || y < 5 || x >= side - 5 || y >= side - 5) continue;
-    const texture = Math.abs(previous[y * side + x - 1] - previous[y * side + x + 1]) +
-      Math.abs(previous[(y - 1) * side + x] - previous[(y + 1) * side + x]);
-    if (texture < 22) continue;
+    // Pick a textured patch within each part of the person instead of nine
+    // fixed points, which often all land on flat skin/clothing and stop moving.
+    let x=-1,y=-1,texture=12;
+    const left=Math.max(12,Math.floor((box.x+offsetX+box.width*(gx-1)/3)*side));
+    const right=Math.min(side-13,Math.ceil((box.x+offsetX+box.width*gx/3)*side));
+    const top=Math.max(12,Math.floor((box.y+offsetY+box.height*(gy-1)/3)*side));
+    const bottom=Math.min(side-13,Math.ceil((box.y+offsetY+box.height*gy/3)*side));
+    for(let py=top;py<=bottom;py+=2)for(let px=left;px<=right;px+=2){
+      const score=Math.abs(previous[py*side+px-1]-previous[py*side+px+1])+
+        Math.abs(previous[(py-1)*side+px]-previous[(py+1)*side+px]);
+      if(score>texture){texture=score;x=px;y=py;}
+    }
+    if(x<0)continue;
     let best = Infinity, next = Infinity, bestX = 0, bestY = 0;
-    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
-      const source = y * side + x;
-      const target = (y + dy) * side + x + dx;
-      const error = Math.abs(previous[source] - current[target]) +
-        Math.abs(previous[source - 1] - current[target - 1]) +
-        Math.abs(previous[source + 1] - current[target + 1]) +
-        Math.abs(previous[source - side] - current[target - side]) +
-        Math.abs(previous[source + side] - current[target + side]);
+    const radius=10,diameter=radius*2+1,errors=new Float32Array(diameter*diameter);
+    for (let dy = -radius; dy <= radius; dy++) for (let dx = -radius; dx <= radius; dx++) {
+      let error=0;
+      for(let py=-1;py<=1;py++)for(let px=-1;px<=1;px++)
+        error+=Math.abs(previous[(y+py)*side+x+px]-current[(y+dy+py)*side+x+dx+px]);
+      errors[(dy+radius)*diameter+dx+radius]=error;
       if (error < best) { next = best; best = error; bestX = dx; bestY = dy; }
       else if (error < next) next = error;
     }
-    if (best < 180 && (next - best > 2 || best < 12)) { votesX.push(bestX); votesY.push(bestY); }
+    if (best < 315 && (next - best > 3 || best < 20)) {
+      const center=(bestY+radius)*diameter+bestX+radius;
+      const refine=(low:number,high:number)=>{
+        const curvature=low-2*best+high;
+        return curvature>0?Math.max(-.5,Math.min(.5,(low-high)/(2*curvature))):0;
+      };
+      const dx=bestX+(Math.abs(bestX)<radius?refine(errors[center-1],errors[center+1]):0);
+      const dy=bestY+(Math.abs(bestY)<radius?refine(errors[center-diameter],errors[center+diameter]):0);
+      votesX.push(dx);votesY.push(dy);
+    }
   }
   if (votesX.length < 3) return { dx: 0, dy: 0, reliable: false };
   const dx = median([...votesX]), dy = median([...votesY]);
@@ -105,7 +119,7 @@ export class FrameMotionEngine {
       if (!track.reliable) continue;
       const base = this.referenceOffsets.get(id) ?? { x: 0, y: 0 };
       const motion = estimateTranslation(previous, current, SIDE, track.box, base.x, base.y);
-      if (!motion.reliable) { if (++track.weakFrames > 10) track.reliable = false; continue; }
+      if (!motion.reliable) { if (++track.weakFrames > 3) track.reliable = false; continue; }
       track.weakFrames = 0;
       track.x = base.x + motion.dx / SIDE;
       track.y = base.y + motion.dy / SIDE;

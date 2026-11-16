@@ -8,7 +8,7 @@ import { initializeVideoEditor } from './videoEditor';
 import { editablePolicies, genderPolicy, hasAdvancedVideoCoverage, hasImageCoverage } from '../config/personPolicy';
 import { initializeEngineStatus } from './engineStatus';
 
-const fields = ['enabled', 'images', 'videos', 'videoPlayback', 'videoDetector', 'advancedVideoMode', 'imageCoverage', 'imageDetectionGate', 'imageWholeBodyEffect', 'imageEffectGrayscale', 'imageFaceEffectGrayscale', 'videoEffectGrayscale', 'automaticGender', 'imageGenderModel', 'videoGenderModel', 'faceAssociation', 'faceAssociationMode', 'debugOverlay', 'imageUnknown', 'videoUnknown', 'performance', 'onnxThreads'] as const;
+const fields = ['enabled', 'images', 'videos', 'pdfs', 'thumbnailFallback', 'videoPlayback', 'videoDetector', 'advancedVideoMode', 'imageCoverage', 'imageDetectionGate', 'imageWholeBodyEffect', 'imageEffectGrayscale', 'imageFaceEffectGrayscale', 'videoEffectGrayscale', 'automaticGender', 'imageGenderModel', 'videoGenderModel', 'faceAssociation', 'faceAssociationMode', 'debugOverlay', 'imageUnknown', 'videoUnknown', 'performance', 'onnxThreads'] as const;
 const skinToggleFields = ['imageBodyRegionMode'] as const;
 const thresholdFields = ['yoloConfidence', 'faceDetectionConfidence', 'minFaceSizePx', 'genderConfidence', 'smallFaceCutoffPx', 'smallFaceConfidence', 'faceCoverage', 'faceMargin', 'centerMaskConfidence'] as const;
 const expansionFields = ['imageExpansion', 'videoExpansion', 'videoSkinExpansion'] as const;
@@ -32,10 +32,10 @@ const videoEditor = initializeVideoEditor(() => settings, async (patch, control)
 });
 let currentHost: string | undefined;
 let activeTabId: number | undefined;
-let pageSummary = 'Checking this page…';
+let pageSummary = 'Checking this pageÃ¢â‚¬Â¦';
 let pageData: PageStatus | undefined;
-let siteHostLabel = 'Checking website…';
-let currentSaveMessage = 'Loading settings…';
+let siteHostLabel = 'Checking websiteÃ¢â‚¬Â¦';
+let currentSaveMessage = 'Loading settingsÃ¢â‚¬Â¦';
 let currentSaveState = 'saved';
 const outputUpdaters = new Map<string, () => void>();
 const engineStatus = initializeEngineStatus(() => element('retryEngine').click());
@@ -90,6 +90,7 @@ function initializeNavigation(): void {
       tab.tabIndex = i === index ? 0 : -1;
       element(i === 0 ? 'imagePanel' : 'videoPanel').hidden = i !== index;
     });
+    element('advancedRules').hidden=index!==0;
     if (focus) tabs[index].focus();
   };
   tabs.forEach((tab, index) => {
@@ -132,16 +133,16 @@ function updateProtectionState(): void {
   const skipped = !settingsView && !!currentHost && siteIsExcepted(currentHost, settings.siteExceptions);
   const noPeople = !['female', 'male'].some(gender => {
     const policy = genderPolicy(settings, gender as 'female' | 'male');
-    return input('images').checked && hasImageCoverage(policy) || input('videos').checked &&
+    return (input('images').checked||input('pdfs').checked) && hasImageCoverage(policy) || input('videos').checked &&
       (settings.advancedVideoMode ? hasAdvancedVideoCoverage(policy) : policy.video !== 'show');
   });
-  const noMedia = !input('images').checked && !input('videos').checked;
+  const noMedia = !input('images').checked && !input('videos').checked && !input('pdfs').checked;
   const paused = !enabled || skipped || noPeople || noMedia;
   document.body.dataset.protection = paused ? 'paused' : 'on';
   element('protectionTitle').textContent = t(!enabled ? 'Protection is paused' : skipped ? 'Paused on this site'
     : noPeople ? 'No people selected' : noMedia ? 'No media selected' : 'Protection is on');
   element('protectionState').textContent = t(!enabled ? 'Turn on to resume across websites.' : skipped ? 'Enabled on other websites.'
-    : noPeople ? 'Choose an area to hide below.' : noMedia ? 'Turn on Images or Videos below.' : 'Your choices apply across websites.');
+    : noPeople ? 'Choose an area to hide below.' : noMedia ? 'Turn on Images, Videos or PDFs below.' : 'Your choices apply across websites.');
   if (settingsView) return;
   const button = element('toggleSite') as HTMLButtonElement;
   const inherited = skipped && !settings.siteExceptions.includes(currentHost!);
@@ -186,7 +187,7 @@ async function persist(patch: Partial<Settings>, control: HTMLInputElement | HTM
   pendingSaves++;
   control.disabled = true;
   document.querySelectorAll<HTMLButtonElement>('[data-person-action],#showAllAreas,#hideAllAreas').forEach(button => { button.disabled = true; });
-  saveStatus('Saving…', 'saving');
+  saveStatus('SavingÃ¢â‚¬Â¦', 'saving');
   updateProtectionState();
   try {
     const response = await chrome.runtime.sendMessage({ type: 'set-settings', patch }) as Settings & { error?: string };
@@ -245,6 +246,14 @@ async function render(): Promise<void> {
       if (saved && field === 'performance') await render();
     };
   }
+  const styles=[input('blackFill'),input('fabricFill')];
+  const syncCoverStyle=()=>{input('fabricFill').checked=settings.fabricFill;input('blackFill').checked=!settings.fabricFill;};
+  syncCoverStyle();
+  for(const control of styles)control.onchange=async()=>{
+    if(!control.checked)return;
+    styles.forEach(style=>{style.disabled=true;});
+    try{await persist({fabricFill:control.id==='fabricFill'},control);}finally{syncCoverStyle();styles.forEach(style=>{style.disabled=false;});}
+  };
   for (const field of Object.keys(resolutionSteps) as Array<keyof typeof resolutionSteps>) {
     const control = input(field);
     const steps = resolutionSteps[field] as readonly (number | 'auto')[];
@@ -252,8 +261,8 @@ async function render(): Promise<void> {
     const updateOutput = () => {
       const selected = steps[Number(control.value)];
       const effective = selected === 'auto' ? resolveYoloSize(settings, field === 'yoloVideoSize' ? 'video' : 'image') : selected;
-      const size = `${number(effective)} × ${number(effective)}`;
-      element(`${field}Value`).textContent = selected === 'auto' ? t('Auto · {size}', { size }) : size;
+      const size = `${number(effective)} Ãƒâ€” ${number(effective)}`;
+      element(`${field}Value`).textContent = selected === 'auto' ? t('Auto Ã‚Â· {size}', { size }) : size;
     };
     updateOutput();
     outputUpdaters.set(field, updateOutput);
@@ -263,8 +272,9 @@ async function render(): Promise<void> {
   for (const field of [...expansionFields, ...effectIntensityFields, ...thresholdFields]) {
     const control = input(field);
     control.value = String(settings[field]);
-    const pixels = [...expansionFields, ...effectIntensityFields, 'minFaceSizePx', 'smallFaceCutoffPx'].includes(field);
-    const updateOutput = () => { element(`${field}Value`).textContent = pixels ? t('{value} px', { value: number(Number(control.value)) }) : percent(Number(control.value)); };
+    const expansion = (expansionFields as readonly string[]).includes(field);
+    const pixels = [...effectIntensityFields, 'minFaceSizePx', 'smallFaceCutoffPx'].includes(field);
+    const updateOutput = () => { element(`${field}Value`).textContent = expansion ? `${number(Number(control.value))}%` : pixels ? t('{value} px', { value: number(Number(control.value)) }) : percent(Number(control.value)); };
     updateOutput();
     outputUpdaters.set(field, updateOutput);
     control.oninput = updateOutput;
@@ -347,7 +357,7 @@ element('labelPerson').onclick = () => { void pageAction('start-label'); };
 element('retryEngine').onclick = async () => {
   const button = element('retryEngine') as HTMLButtonElement;
   button.disabled = true;
-  saveStatus('Restarting engine…', 'saving');
+  saveStatus('Restarting engineÃ¢â‚¬Â¦', 'saving');
   try {
     const ensured = await chrome.runtime.sendMessage({ type: 'ensure-offscreen' });
     if (ensured?.ok === false) throw new Error(ensured.error);
@@ -397,3 +407,5 @@ async function initialize(): Promise<void> {
 element('retrySettings').onclick = () => { void initialize(); };
 void initialize();
 void engineStatus.refresh();
+
+element('openPdf').onclick=async()=>{const tab=(await chrome.tabs.query({active:true,currentWindow:true}))[0];const source=tab?.url&&/^https?:/.test(tab.url)&&/\.pdf(?:[?#]|$)/i.test(tab.url)?'?src='+encodeURIComponent(tab.url):'';await chrome.tabs.create({url:chrome.runtime.getURL('pdf.html')+source});if(!settingsView)window.close();};

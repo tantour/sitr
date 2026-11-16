@@ -3,10 +3,10 @@
 import { spawnSync } from 'node:child_process';
 import { root } from './models.mjs';
 // Run serially: concurrent GPU startup distorts latency and can trigger timeouts.
-const checks = ['popup-ux-check', 'warmup-probe', 'body-regions-probe', 'groin-probe', 'smoke', 'cross-origin-probe', 'responsive-image-probe',
-  'visibility-recovery-probe', 'overlay-stacking-probe', 'background-image-probe',
-  'duplicate-image-probe', 'overlay-reuse-probe', 'skin-threshold-render-probe',
-  'video-compatibility-probe', 'advanced-video-probe', 'meet-video-probe', 'face-probe', 'gender-probe'];
+const checks = ['popup-ux-check', 'pdf-probe', 'warmup-probe', 'body-regions-probe', 'advanced-rules-probe', 'hair-smoothing-probe', 'small-image-probe', 'groin-probe', 'smoke', 'cross-origin-probe', 'responsive-image-probe', 'image-preview-probe',
+  'visibility-recovery-probe', 'overlay-stacking-probe', 'background-image-probe', 'gif-probe', 'webp-probe', 'animation-grid-probe',
+  'duplicate-image-probe', 'overlay-reuse-probe', 'reprocess-overlay-probe', 'skin-threshold-render-probe',
+  'motion-alignment-probe', 'video-compatibility-probe', 'advanced-video-probe', 'meet-video-probe', 'face-probe', 'gender-probe'];
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(SMOKE_|FACE_PROBE_)/.test(key)));
 const args = process.argv.slice(2);
 if (args.length && (args.length !== 2 || args[0] !== '--from' || !checks.includes(args[1])))

@@ -9,6 +9,7 @@ export interface PelvisEstimate {
   height: number;
   width: number;
   thighs?: Array<{ hip: Point; knee: Point }>;
+  groin?: { center: Point; down: Point; halfWidth: number; rise: number; depth: number };
 }
 export type RegionPerson = Pick<PersonDetection, 'mask' | 'maskWidth' | 'maskHeight'>;
 export interface PoseHeads { heatmaps: Float32Array; offsets: Float32Array; inputSide: number }
@@ -31,6 +32,37 @@ const quantile = (sorted: number[], fraction: number) => sorted[Math.round((sort
 const mean = (points: Point[]): Point => ({ x: points.reduce((n, p) => n + p.x, 0) / points.length,
   y: points.reduce((n, p) => n + p.y, 0) / points.length });
 
+/** Construct once per person. Use the full pelvis width, but keep the vertical
+ * band close to the hip junction rather than descending into the thighs. */
+function groinGeometry(pelvis:PelvisEstimate,person:RegionPerson,hips?:Point[],dense?:PelvisEstimate):NonNullable<PelvisEstimate['groin']>{
+  const center=hips?mean(hips):{x:pelvis.origin.x+pelvis.down.x*pelvis.height,y:pelvis.origin.y+pelvis.down.y*pelvis.height};
+  // Fuse the learned hip pair with the dense torso/upper-leg junction. Clothing
+  // can pull either estimate off the joint; only a small, agreeing correction
+  // is allowed, never a jump toward an unrelated lower-body component.
+  if(hips&&dense){
+    const x=dense.origin.x+dense.down.x*dense.height-center.x,y=dense.origin.y+dense.down.y*dense.height-center.y;
+    const forward=x*pelvis.down.x+y*pelvis.down.y,lateral=Math.abs(x*pelvis.down.y-y*pelvis.down.x);
+    if(forward>0&&forward<pelvis.height*.3&&lateral<pelvis.width*.35){center.x+=pelvis.down.x*forward*.5;center.y+=pelvis.down.y*forward*.5;}
+  }
+  let down=pelvis.down;
+  const lengths=(pelvis.thighs??[]).map(thigh=>Math.hypot(thigh.knee.x-thigh.hip.x,thigh.knee.y-thigh.hip.y)).sort((a,b)=>a-b);
+  if(lengths.length){
+    const direction=mean(pelvis.thighs!.map(thigh=>{const length=Math.hypot(thigh.knee.x-thigh.hip.x,thigh.knee.y-thigh.hip.y);return{x:(thigh.knee.x-thigh.hip.x)/length,y:(thigh.knee.y-thigh.hip.y)/length};}));
+    if(direction.x*down.x+direction.y*down.y>0){const x=.8*down.x+.2*direction.x,y=.8*down.y+.2*direction.y,length=Math.hypot(x,y);down={x:x/length,y:y/length};}
+  }
+  const halfWidth=pelvis.width*.65;
+  let depth=Math.min(pelvis.height*.18,pelvis.width*.30,...(lengths.length?[lengths[0]*.30]:[]));
+  // If both legs flank an actual instance-mask gap, end at the split. A lone
+  // missing center pixel cannot establish a crotch boundary.
+  const sample=(x:number,y:number)=>x<0||x>1||y<0||y>1?0:person.mask[Math.round(y*(person.maskHeight-1))*person.maskWidth+Math.round(x*(person.maskWidth-1))];
+  let gap=0;
+  for(let step=2;step<=12;step++){
+    const distance=depth*step/12,x=center.x+down.x*distance,y=center.y+down.y*distance,offset=halfWidth*.75;
+    if(sample(x,y)<.35&&sample(x+down.y*offset,y-down.x*offset)>.65&&sample(x-down.y*offset,y+down.x*offset)>.65){if(++gap===2){depth=depth*(step-1)/12;break;}}else gap=0;
+  }
+  return{center,down,halfWidth,rise:Math.min(pelvis.height*.14,pelvis.width*.22),depth};
+}
+
 /** BodyPix has no groin class. Locate the pelvis from its clothed torso and
  * upper-leg predictions, using a local torso axis rather than image vertical.
  * Sparse, cropped, overlapping or implausible evidence yields no estimate. */
@@ -43,7 +75,7 @@ export function estimatePelvis(labels: Uint8Array, grid: number, people: readonl
     const owner = regionOwner(people, point.x, point.y);
     if (owner >= 0) (label <= 14 ? evidence[owner].torso : evidence[owner].legs).push(point);
   }
-  return evidence.map(({ torso, legs }) => {
+  return evidence.map(({ torso, legs },person) => {
     if (torso.length < 6 || legs.length < 4) return;
     const center = mean(torso), legCenter = mean(legs);
     let dx = legCenter.x - center.x, dy = legCenter.y - center.y;
@@ -72,8 +104,9 @@ export function estimatePelvis(labels: Uint8Array, grid: number, people: readonl
     const left = quantile(hip, .05), right = quantile(hip, .95), width = right - left;
     if (width < 1 / (grid - 1) || width / height < .2 || width / height > 1.6) return;
     const middle = (left + right) / 2;
-    return { origin: { x: center.x + top * dx + middle * dy, y: center.y + top * dy - middle * dx },
+    const pelvis:PelvisEstimate={ origin: { x: center.x + top * dx + middle * dy, y: center.y + top * dy - middle * dx },
       down: { x: dx, y: dy }, height, width };
+    pelvis.groin=groinGeometry(pelvis,people[person]);return pelvis;
   });
 }
 
@@ -122,35 +155,27 @@ export function estimatePosePelvis(pose: PoseHeads, grid: number, people: readon
       const length = Math.hypot(knee.x - hip.x, knee.y - hip.y);
       if (length >= .3 * height && length <= 1.8 * height) thighs.push({ hip, knee });
     }
-    return { origin: shoulder, down: { x: dx, y: dy }, height, width, thighs };
+    const pelvis:PelvisEstimate={ origin: shoulder, down: { x: dx, y: dy }, height, width, thighs };
+    pelvis.groin=groinGeometry(pelvis,people[person],[leftHip,rightHip],dense[person]);return pelvis;
   });
 }
 
-/** Groin/pelvis is a tapering band over the lower torso and proximal legs.
- * Repair the outer upper thighs that BodyPix often includes in its torso.
+/** Groin is a shallow, full-width hip band; lower thigh regions stay independent.
+ * Repair the outer upper thighs that BodyPix sometimes includes in its torso.
  * Other learned parts (especially hands over the pelvis) retain their labels. */
 export function pelvicRegion(region: number, x: number, y: number, pelvis?: PelvisEstimate): number {
   if (!pelvis || ![1, 5, 6].includes(region)) return region;
   const px = x - pelvis.origin.x, py = y - pelvis.origin.y;
   const along = (px * pelvis.down.x + py * pelvis.down.y) / pelvis.height;
-  let cross = px * pelvis.down.y - py * pelvis.down.x;
-  let groinEnd = 1.45;
-  if (pelvis.thighs?.length) {
-    const direction = mean(pelvis.thighs.map(t => ({ x: t.knee.x - t.hip.x, y: t.knee.y - t.hip.y })));
-    const forward = (direction.x * pelvis.down.x + direction.y * pelvis.down.y) / pelvis.height;
-    if (forward > .2) {
-      // Follow bent/crossed legs below the hips; extrapolating torso lean
-      // straight down would displace the crotch sideways. Stop above knees.
-      groinEnd = Math.min(1.7, 1 + forward * .8);
-      cross -= Math.max(0, along - 1) / forward * (direction.x * pelvis.down.y - direction.y * pelvis.down.x);
+  const across = Math.abs(px * pelvis.down.y - py * pelvis.down.x) / pelvis.width;
+  const groin=pelvis.groin;
+  if(groin&&region!==6){
+    const gx=x-groin.center.x,gy=y-groin.center.y,d=gx*groin.down.x+gy*groin.down.y,c=Math.abs(gx*groin.down.y-gy*groin.down.x);
+    if(d>=-groin.rise&&d<=groin.depth){
+      if(c<=groin.halfWidth)return 9;
     }
   }
-  const across = Math.abs(cross) / pelvis.width;
-  if (along >= .9 && along <= groinEnd && across <= .65) {
-    const halfWidth = .46 - Math.max(0, along - 1) / (groinEnd - 1) * .24;
-    if (region !== 6 && across <= halfWidth) return 9;
-    if (region === 1) return 5;
-  }
+  if(region===1&&along>=.96&&along<=1+(groin?.depth??0)/pelvis.height&&across<=.65)return 5;
   // Hip-to-knee segments recover the upper thighs even when dense parsing
   // drifts into torso or lower-leg labels. Arms/hands and unknowns are exempt.
   for (const thigh of pelvis.thighs ?? []) {

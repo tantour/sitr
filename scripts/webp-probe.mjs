@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+import {chromium} from 'playwright';import {createServer} from 'node:http';import {readFile,mkdir,mkdtemp,rm} from 'node:fs/promises';import {resolve,sep} from 'node:path';import assert from 'node:assert/strict';
+const cache=resolve('.cache');await mkdir(cache,{recursive:true});const profile=await mkdtemp(resolve(cache,'webp-probe-'));
+const files=Object.fromEntries(await Promise.all(['single','animated','transparent'].map(async n=>[n,await readFile('tests/fixtures/webp-'+n+'.webp')])));
+const server=createServer((req,res)=>{const name=req.url.slice(1).split(/[.?]/)[0];if(files[name]){res.setHeader('content-type','image/webp');res.end(files[name]);return;}res.setHeader('content-type','text/html');res.end('<!doctype html><style>img{width:144px;height:192px;object-fit:contain}#background{width:144px;height:192px;background-size:contain;background-repeat:no-repeat}</style><img id="single" src="/single.webp"><img id="animated" src="/animated.webp"><div id="background" style="background-image:url(/animated.webp?background)"></div>');});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+let context;
+try{
+ context=await chromium.launchPersistentContext(profile,{headless:true,channel:'chromium',args:[`--disable-extensions-except=${resolve('dist')}`,`--load-extension=${resolve('dist')}`,'--host-resolver-rules=MAP gif.test 127.0.0.1','--no-proxy-server']});
+ const sw=context.serviceWorkers()[0]??await context.waitForEvent('serviceworker');const ui=await context.newPage();await ui.goto(new URL('popup.html',sw.url()).href);
+ await ui.locator('#saveStatus').filter({hasText:'Saved automatically'}).waitFor();
+ await ui.evaluate(()=>chrome.runtime.sendMessage({type:'set-settings',patch:{images:true,videos:true,automaticGender:false,filter:'both',videoDetector:'fast-box',advancedVideoMode:true,fabricFill:true}}));
+ await ui.waitForFunction(async()=>(await chrome.runtime.sendMessage({type:'engine-status'}))?.ready,null,{timeout:180000});
+ const page=await context.newPage(),errors=[];page.on('pageerror',e=>{errors.push(e.message);console.log('pageerror',e.message);});page.on('console',m=>{if(m.type()==='error')console.log('console',m.text().slice(0,250));});await page.goto('http://'+(process.env.GIF_PROBE_HOST??'gif.test')+':'+server.address().port+'/');
+ const diagnostic=()=>page.evaluate(()=>[...document.querySelectorAll('img')].map(img=>({id:img.id,kind:img.dataset.localMediaCensorKind,status:img.dataset.localMediaCensorStatus,pending:img.hasAttribute('data-local-media-censor-pending'),sequence:img.dataset.localMediaCensorSequence,frames:img.dataset.localMediaCensorGifFrames})));
+ try{await page.waitForFunction(()=>document.querySelector('#single').dataset.localMediaCensorKind==='image'&&Number(document.querySelector('#animated').dataset.localMediaCensorSequence)>2,null,{timeout:45000});}catch(e){console.log('diagnostic',await diagnostic(),'errors',errors,'url',page.url());throw e;}
+ if(process.env.GIF_PROBE_HOST!=='127.0.0.1')assert.equal(await page.evaluate(()=>isSecureContext),false,'Exercise extension-origin decoding from insecure HTTP');
+ const initial=await diagnostic();assert.equal(initial[0].kind,'image');assert.equal(initial[1].kind,'webp-video');
+ await page.waitForFunction(()=>{const img=document.querySelector('#animated'),canvas=img.nextElementSibling;if(canvas?.tagName!=='CANVAS')return false;const color=canvas.getContext('2d').getImageData(12,12,1,1).data,index=Number(img.dataset.localMediaCensorGifFrame);return color[index]>150&&color[(index+1)%3]<120&&color[3]===255;},null,{timeout:10000});
+ const observed=await page.evaluate(()=>new Promise(resolve=>{const frames=new Set();let ticks=0;const timer=setInterval(()=>{frames.add(document.querySelector('#animated').dataset.localMediaCensorGifFrame);if(++ticks===30){clearInterval(timer);resolve([...frames]);}},50);}));assert(observed.length>1,'Animated GIF must display multiple decoded frames');
+ // Only video controls should govern the animated GIF.
+ await ui.evaluate(()=>chrome.runtime.sendMessage({type:'set-settings',patch:{images:false,videos:true}}));
+ await page.waitForFunction(()=>!document.querySelector('#single').hasAttribute('data-local-media-censor-pending')&&getComputedStyle(document.querySelector('#animated')).opacity==='0',null,{timeout:15000});
+ const before=await page.locator('#animated').evaluate(img=>Number(img.dataset.localMediaCensorSequence));await page.waitForFunction(before=>Number(document.querySelector('#animated').dataset.localMediaCensorSequence)>before+1,before,{timeout:15000});
+ await ui.evaluate(()=>chrome.runtime.sendMessage({type:'set-settings',patch:{videos:false,images:true}}));
+ await page.waitForFunction(()=>getComputedStyle(document.querySelector('#animated')).opacity!=='0'&&!document.querySelector('#animated').hasAttribute('data-local-media-censor-pending'),null,{timeout:15000});
+ await ui.evaluate(()=>chrome.runtime.sendMessage({type:'set-settings',patch:{videos:true}}));await page.waitForFunction(()=>getComputedStyle(document.querySelector('#animated')).opacity==='0',null,{timeout:15000});
+ // Source replacement must restore ordinary image ownership and stop GIF work.
+ await page.locator('#animated').evaluate(img=>img.src='/single.webp?replacement');await page.waitForFunction(()=>document.querySelector('#animated').dataset.localMediaCensorKind==='image'&&getComputedStyle(document.querySelector('#animated')).opacity!=='0'&&!document.querySelector('#animated').hasAttribute('data-local-media-censor-pending'),null,{timeout:20000});
+ await page.waitForFunction(()=>document.querySelector('#background').dataset.localMediaCensorBackground==='protected',null,{timeout:20000});
+ const backgrounds=await page.evaluate(()=>new Promise(resolve=>{const urls=new Set();let ticks=0;const timer=setInterval(()=>{urls.add(getComputedStyle(document.querySelector('#background')).backgroundImage);if(++ticks===15){clearInterval(timer);resolve([...urls]);}},100);}));assert(backgrounds.filter(x=>x.includes('blob:')).length>1,'CSS GIF backgrounds must advance processed frames');
+ await page.evaluate(()=>{const img=new Image();img.id='transparent';img.src='/transparent.webp';document.body.append(img);});
+ await page.waitForFunction(()=>document.querySelector('#transparent')?.dataset.localMediaCensorGifFrame==='1'&&document.querySelector('#transparent')?.nextElementSibling?.tagName==='CANVAS',null,{timeout:15000});
+ await page.waitForFunction(()=>{const img=document.querySelector('#transparent');if(img.dataset.localMediaCensorGifFrame!=='1')return false;const canvas=img.nextElementSibling,ctx=canvas.getContext('2d');return ctx.getImageData(15,39,1,1).data[3]===0&&ctx.getImageData(113,137,1,1).data[2]>200;},null,{timeout:15000});
+ assert.deepEqual(errors,[]);console.log('PASS: static/animated WebP routing, HTTP decoding, source changes, settings, animated CSS backgrounds and transparent disposal.');
+ await mkdir('.impeccable/review',{recursive:true});await page.screenshot({path:'.impeccable/review/gif-support.png'});
+}finally{await context?.close();await new Promise(r=>server.close(r));assert(profile.startsWith(cache+sep));await rm(profile,{recursive:true,force:true});}

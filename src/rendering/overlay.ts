@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {applyBlackPixels} from './hairMask';
+import {dilate} from './compositor';
+import {uniqueId} from '../state/id';
 // Copyright (C) 2026 Sitr contributors
+import { applyGarmentTone, type GarmentTone } from './videoFabric';
 import type { AnalysisResult } from '../state/contracts';
+import { applyFabric, applyClothing, softenFabricEdges, shadeFabricRuns } from './fabric';
 
 export class Overlay {
   readonly canvas = document.createElement('canvas');
@@ -10,9 +15,12 @@ export class Overlay {
   private staticCanvas?: HTMLCanvasElement;
   private faceCanvas?: HTMLCanvasElement;
   private faceCanvases: Array<{ canvas: HTMLCanvasElement; effect: NonNullable<AnalysisResult['faceEffect']> }> = [];
+  private smartCanvas?: HTMLCanvasElement;
   private blackCanvas?: HTMLCanvasElement;
   private faceLayerCanvas = document.createElement('canvas');
   private trackCanvases = new Map<string, HTMLCanvasElement>();
+  private videoPadding=0;
+  private continuityCanvases=new Map<string,{radius:number;canvas:HTMLCanvasElement}>();
   private debugCanvases = new Map<string, HTMLCanvasElement>();
   private bodyRegionCanvas?: HTMLCanvasElement;
   private motion = new Map<string, { x: number; y: number }>();
@@ -23,9 +31,9 @@ export class Overlay {
   private readonly anchorName: string;
   private readonly originalAnchorName: string;
   private readonly originalAnchorPriority: string;
-  constructor(private readonly media: HTMLImageElement | HTMLVideoElement) {
+  constructor(private readonly media: HTMLImageElement | HTMLVideoElement, private readonly frameSource?: HTMLCanvasElement) {
     this.parent = media.parentNode instanceof ShadowRoot ? media.parentNode : media.parentElement || document.body || document.documentElement;
-    this.anchorName = `--local-media-censor-${crypto.randomUUID().replaceAll('-', '')}`;
+    this.anchorName = `--local-media-censor-${uniqueId().replaceAll('-', '')}`;
     this.originalAnchorName = media.style.getPropertyValue('anchor-name');
     this.originalAnchorPriority = media.style.getPropertyPriority('anchor-name');
     const inheritedNames = getComputedStyle(media).getPropertyValue('anchor-name').trim();
@@ -75,8 +83,9 @@ export class Overlay {
     this.staticCanvas = undefined;
     this.faceCanvas = undefined;
     this.faceCanvases = [];
-    this.blackCanvas = undefined;
+    this.blackCanvas = undefined;this.smartCanvas=undefined;
     this.trackCanvases.clear();
+    this.continuityCanvases.clear();this.videoPadding=0;
     this.debugCanvases.clear();
     this.motion.clear();
     this.canvas.getContext('2d')?.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -95,6 +104,7 @@ export class Overlay {
   }
   set(result: AnalysisResult): void {
     this.frame = result;
+    this.continuityCanvases.clear();
     this.bodyRegionCanvas = undefined;
     if (result.debugBodyRegions) {
       const { labels, width, height } = result.debugBodyRegions;
@@ -114,17 +124,22 @@ export class Overlay {
       if (this.maskCanvas.height !== result.height) this.maskCanvas.height = result.height;
       const ctx = this.bitmap ?? this.maskCanvas.getContext('2d');
       if (!ctx) throw new Error('Overlay canvas unavailable');
-      ctx.putImageData(new ImageData(new Uint8ClampedArray(result.rgbaMask.buffer as ArrayBuffer,
-        result.rgbaMask.byteOffset, result.rgbaMask.byteLength), result.width, result.height), 0, 0);
+      const pixels = result.fabricFill ? new Uint8ClampedArray(result.rgbaMask)
+        : new Uint8ClampedArray(result.rgbaMask.buffer as ArrayBuffer, result.rgbaMask.byteOffset, result.rgbaMask.byteLength);
+      if (result.fabricFill && result.clothingRgb) applyClothing(pixels, result.clothingRgb);
+      else if (result.fabricFill) applyFabric(pixels, result.width, result.height);
+      if (result.fabricFill) {shadeFabricRuns(pixels,result.width,result.height);softenFabricEdges(pixels, result.width, result.height);}
+      ctx.putImageData(new ImageData(pixels, result.width, result.height), 0, 0);
     }
     this.staticCanvas = result.staticMask ? this.layerCanvas(result.staticMask, result.width, result.height, this.staticCanvas) : undefined;
     this.faceCanvas = result.faceMask ? this.layerCanvas(result.faceMask, result.width, result.height, this.faceCanvas) : undefined;
     this.faceCanvases = (result.faceLayers ?? []).map((layer, index) => ({ canvas: this.layerCanvas(layer.alpha, result.width, result.height, this.faceCanvases[index]?.canvas), effect: layer.effect }));
-    this.blackCanvas = result.blackMask ? this.layerCanvas(result.blackMask, result.width, result.height, this.blackCanvas) : undefined;
+    this.blackCanvas = result.blackMask ? this.layerCanvas(result.blackMask, result.width, result.height, this.blackCanvas,undefined,undefined,undefined,false) : undefined;
+    this.smartCanvas=result.smartCoverMask?this.layerCanvas(result.smartCoverMask,result.width,result.height,this.smartCanvas,undefined,undefined,undefined,true):undefined;
     const active = new Set<string>();
     for (const mask of result.trackMasks || []) {
       active.add(mask.id);
-      this.trackCanvases.set(mask.id, this.layerCanvas(mask.alpha, result.width, result.height, this.trackCanvases.get(mask.id)));
+      this.trackCanvases.set(mask.id, this.layerCanvas(mask.alpha, result.width, result.height, this.trackCanvases.get(mask.id), mask.fabricColor, mask.fabricLight, mask.fabricBox,undefined,mask.blackAlpha));
     }
     for (const id of this.trackCanvases.keys()) if (!active.has(id)) this.trackCanvases.delete(id);
     this.debugCanvases.clear();
@@ -149,8 +164,9 @@ export class Overlay {
     canvas.getContext('2d')?.putImageData(new ImageData(rgba, width, height), 0, 0);
     return canvas;
   }
+  private fabricLayers = new WeakSet<HTMLCanvasElement>();
   private layerImages = new WeakMap<HTMLCanvasElement, ImageData>();
-  private layerCanvas(alpha: Uint8Array, width: number, height: number, reusable?: HTMLCanvasElement): HTMLCanvasElement {
+  private layerCanvas(alpha: Uint8Array, width: number, height: number, reusable?: HTMLCanvasElement, garmentColor?: GarmentTone, garmentLight?:[number,number,number,number], garmentBox?:{x:number;y:number;width:number;height:number},fabric=this.frame?.fabricFill,blackAlpha?:Uint8Array): HTMLCanvasElement {
     const canvas = reusable ?? document.createElement('canvas');
     if (canvas.width !== width) canvas.width = width;
     if (canvas.height !== height) canvas.height = height;
@@ -161,6 +177,18 @@ export class Overlay {
     }
     const pixels = image.data;
     for (let i = 0; i < alpha.length; i++) pixels[4 * i + 3] = alpha[i];
+    if (fabric) {
+      if (garmentColor) applyGarmentTone(pixels, garmentColor);
+      else if (this.frame?.clothingRgb) applyClothing(pixels, this.frame.clothingRgb);
+      else applyFabric(pixels, width, height);
+      this.fabricLayers.add(canvas);
+    } else if (this.fabricLayers.has(canvas)) {
+      for (let i = 0; i < alpha.length; i++) pixels[4 * i] = pixels[4 * i + 1] = pixels[4 * i + 2] = 0;
+      this.fabricLayers.delete(canvas);
+    }
+    if (fabric) shadeFabricRuns(pixels,width,height,garmentLight,garmentBox);
+    if(blackAlpha)applyBlackPixels(pixels,blackAlpha);
+    if (fabric) softenFabricEdges(pixels, width, height);
     canvas.getContext('2d')?.putImageData(image, 0, 0);
     return canvas;
   }
@@ -183,7 +211,7 @@ export class Overlay {
       small.filter = filters.length ? filters.join(' ') : 'none';
       if ((effect.kind === 'blur' && !small.filter.includes('blur(')) ||
           (effect.grayscale && !small.filter.includes('grayscale('))) return;
-      small.drawImage(this.media, 0, 0, smallWidth, smallHeight);
+      small.drawImage(this.frameSource ?? this.media, 0, 0, smallWidth, smallHeight);
       small.filter = 'none';
       ctx.save();
       try {
@@ -193,7 +221,8 @@ export class Overlay {
       } finally { ctx.restore(); }
     } catch { /* Keep the already-drawn black mask if this media cannot be copied. */ }
   }
-  setMotion(offsets: Map<string, { x: number; y: number }>): void { this.motion = offsets; this.draw(); }
+  setVideoPadding(bodyFraction:number):void{this.videoPadding=Math.max(0,Math.min(.04,bodyFraction));}
+  setMotion(offsets: Map<string, { x: number; y: number }>, immediate=false): void { this.motion = offsets; if(immediate)this.drawNow();else this.draw(); }
   draw(): void {
     if (this.raf) return;
     this.raf = requestAnimationFrame(() => {
@@ -243,8 +272,21 @@ export class Overlay {
       if (this.frame.trackMasks) {
         if (this.staticCanvas) ctx.drawImage(this.staticCanvas, sx, sy, sourceW, sourceH, dx, dy, renderedW, renderedH);
         for (const mask of this.frame.trackMasks) {
-          const layer = this.trackCanvases.get(mask.id);
+          let layer = this.trackCanvases.get(mask.id);
           if (!layer) continue;
+          if(this.videoPadding&&this.media instanceof HTMLVideoElement){
+            const box=this.frame.tracks.find(track=>track.id===mask.id)?.box;
+            if(box){
+              const radius=Math.max(1,Math.round(this.videoPadding*Math.max(box.width,box.height)*s));
+              let cached=this.continuityCanvases.get(mask.id);
+              if(!cached||cached.radius!==radius){
+                const alpha=dilate(mask.alpha,s,s,radius),black=mask.blackAlpha?dilate(mask.blackAlpha,s,s,radius):undefined;
+                const canvas=this.layerCanvas(alpha,s,s,undefined,mask.fabricColor,mask.fabricLight,mask.fabricBox,undefined,black);
+                cached={radius,canvas};this.continuityCanvases.set(mask.id,cached);
+              }
+              layer=cached.canvas;
+            }
+          }
           const shift = this.motion.get(mask.id);
           const mx = (shift?.x ?? 0) * s * renderedW / sourceW;
           const my = (shift?.y ?? 0) * s * renderedH / sourceH;
@@ -277,6 +319,7 @@ export class Overlay {
         this.drawEffect(temporary, dx, dy, renderedW, renderedH, layer.effect);
         ctx.drawImage(this.faceLayerCanvas, 0, 0);
       }
+      if(this.smartCanvas)ctx.drawImage(this.smartCanvas,sx,sy,sourceW,sourceH,dx,dy,renderedW,renderedH);
       if (this.blackCanvas) ctx.drawImage(this.blackCanvas, sx, sy, sourceW, sourceH, dx, dy, renderedW, renderedH);
       if (this.frame.debugPersonMasks) {
         if (this.bodyRegionCanvas) {
@@ -335,6 +378,10 @@ export class Overlay {
           ctx.restore();
         }
       }
+    if (this.frameSource) {
+      ctx.save();ctx.globalCompositeOperation='destination-over';
+      ctx.drawImage(this.frameSource,0,0,this.frameSource.width,this.frameSource.height,dx,dy,renderedW,renderedH);ctx.restore();
+    }
     return true;
   }
   dispose(): void {
@@ -350,6 +397,7 @@ export class Overlay {
     this.faceCanvas = undefined;
     this.faceCanvases = [];
     this.trackCanvases.clear();
+    this.continuityCanvases.clear();this.videoPadding=0;
     this.debugCanvases.clear();
     this.bodyRegionCanvas = undefined;
   }

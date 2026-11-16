@@ -126,3 +126,7 @@ Theme and language use native header selects and a separate `uiPreferences` stor
 - **Don't** communicate protection, selection, or save failure through color alone.
 - **Don't** flatten automatic saves and explicit website-list saves into the same interaction.
 
+
+## Beta settings refinement
+
+Coverage starts with protection and media scope, followed by one shared Cover style choice: Black or Smart clothing. These are native radios with clear selected/focus states and explanatory swatches in full settings; the popup uses a compact text treatment. Image and video editors remain distinct. Custom rules spans the content width below both editors and has its own synchronized gender selector. The old per-part threshold form is removed; saved rules remain editable through Custom rules. Rule conditions use compact columns on desktop and wrap on narrow screens. Technical explanations use disclosures. Existing colors, logo, typography and theme tokens remain authoritative.

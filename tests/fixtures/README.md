@@ -21,3 +21,9 @@ The previous Lena fixture has been removed from the public source distribution
 because the project had no documented redistribution grant for it. Historical
 benchmark reports may still mention it; current probes use the attributed media
 above. Existing historical throughput numbers used a different fixture mix.
+
+GIF regression fixtures: `gif-single.gif` and `gif-animated.gif` are resized, palette-encoded derivatives of the attributed bus photograph with colored frame markers (same AGPL attribution). The animation has three timed frames, infinite looping and disposal-to-background. `gif-transparent.gif` is an original two-frame red/blue-square fixture with transparent backgrounds and disposal-to-background, generated for this project.
+
+Groin regression references distinguish the full-width hip band from upper-thigh samples. The former deep standing/crossed-leg sample is retained as a negative reference: it must stay thigh rather than extending groin coverage downward. Existing clothed landmarks and skin-only clothing-exclusion checks remain separate from claims about exposed anatomy accuracy.
+
+WebP regression fixtures: `webp-single.webp`, `webp-animated.webp`, and `webp-transparent.webp` are native-Chrome WebP encodings of the corresponding GIF fixtures above, retaining their attribution. The animated RIFF containers use full-frame replacement, 200 ms frames, and infinite looping.

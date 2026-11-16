@@ -17,11 +17,13 @@ export async function verifyRelease() {
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.minimum_chrome_version, '148');
   assert.deepEqual(manifest.permissions, ['offscreen', 'storage']);
+  assert.equal(manifest.mime_types_handler['application/pdf'].handler_url,'pdf.html');
   assert.equal(manifest.message_serialization, 'structured_clone');
   assert(!manifest.content_security_policy.extension_pages.includes('http'), 'Remote scripts are forbidden');
   const required = [manifest.background.service_worker, manifest.action.default_popup,
     ...Object.values(manifest.icons), ...manifest.content_scripts.flatMap(script => script.js),
     ...manifest.web_accessible_resources.flatMap(entry => entry.resources),
+    'pdf.html','pdf.css','pdf.js','pdf-layout-worker.js','pdfjs/pdf.worker.mjs','pdfjs/pdf_viewer.css','pdfjs/LICENSE',
     'offscreen.js', 'worker.js', 'semantic-worker.js', 'person-runtime.js', 'popup.js', 'popup.css',
     'wasm/ort-wasm-simd-threaded.jsep.wasm', 'wasm/ort-wasm-simd-threaded.wasm',
     'wasm/ort-wasm-simd-threaded.jsep.mjs', 'wasm/ort-wasm-simd-threaded.mjs',

@@ -6,9 +6,9 @@
 
 Sitr is a Chrome extension that covers selected people in supported images and videos. Choose skin and hair coverage or whole-person coverage, use black masks, blur, or a pixelated mosaic, and tune images and videos separately. English and Arabic interfaces include light, dark, and system themes.
 
-**New in 0.5.2:** per-part skin thresholds, separate chest and belly controls, optional advanced video masks, and a visual video editor. [See the update and screenshots](#what-changed-in-052).
+**New in 0.6.0:** smart clothing fill, combined custom rules, GIF/WebP support, smoother video tracking, and PDF picture protection. [See the update and screenshots](#what-changed-in-060).
 
-<img src="docs/images/popup.png" width="440" alt="Sitr 0.5.2 main controls: protection, media tabs, cover area, and Advanced segmentation">
+<img src="docs/images/popup.png" width="440" alt="Sitr controls in the earlier 0.5.2 layout: protection, media tabs, and body areas">
 
 **Requires Chrome 148 or newer.** Sitr uses local AI estimates that can miss people, misclassify appearance, or leave parts of moving media uncovered. It does not guarantee that every unwanted image or video frame is hidden. [Supported media and limitations](#supported-media-and-limitations).
 
@@ -16,7 +16,7 @@ Sitr is a Chrome extension that covers selected people in supported images and v
 
 ### From a GitHub release
 
-1. Open [Sitr v0.5.2](https://github.com/tantour/sitr/releases/tag/v0.5.2) release page and download `sitr-0.5.2-chrome.zip` and `SHA256SUMS.txt`.
+1. Open [Sitr v0.6.0](https://github.com/tantour/sitr/releases/tag/v0.6.0) release page and download `sitr-0.6.0-chrome.zip` and `SHA256SUMS.txt`.
 2. Verify the ZIP's SHA-256 against the checksum file, then extract it into a permanent folder. Do not load the ZIP itself.
 3. Visit `chrome://extensions`, turn on **Developer mode**, and choose **Load unpacked**.
 4. Select the extracted folder containing `manifest.json`. Pin **Sitr** using Chrome's extensions menu.
@@ -32,8 +32,8 @@ Use **Node.js 22.12+**, npm, and Git. Model binaries live in release assets to k
 
 ```sh
 npm ci
-# Download sitr-0.5.2-models.zip from the matching release first.
-npm run models -- --archive /path/to/sitr-0.5.2-models.zip
+# Download sitr-0.6.0-models.zip from the matching release first.
+npm run models -- --archive /path/to/sitr-0.6.0-models.zip
 npm run check
 npm run build
 npm run verify:release
@@ -45,8 +45,8 @@ Load `dist/` using the same Chrome steps above. Commands also work in PowerShell
 
 - **Visual editors:** choose image and video coverage independently for Female and Male using gender tabs, clickable person diagrams, area menus, and action buttons. Automatic labels estimate visible appearance; they do not establish identity or gender.
 - **Images:** choose exposed skin and hair areas, or Whole body to include clothing. Faces have separate Show, Black, Blur, and Pixelate actions; blur/pixelation strength is independent for each gender.
-- **Advanced segmentation:** optional, image-only anatomy detection powered by BodyPix. **Fast** adds less processing; **Quality** is slower with finer detail. Keep it off for grouped body skin with separate face and hair choices.
-- **Part thresholds:** hide an entire image part or body when exposed skin exceeds your percentage of that part. Whole-body rules choose Black or Show for the face.
+- **Choose body areas:** optional, image-only anatomy detection powered by BodyPix. **Fast** adds less processing; **Quality** is slower with finer detail. Keep it off for grouped body skin with separate face and hair choices.
+- **Custom rules:** combine area conditions with AND/OR and choose black or smart clothing. Saved part thresholds remain editable here; the old separate controls are removed.
 - **Videos:** whole-person silhouettes or faster person boxes, with a visual editor and motion correction between sampled analyses. Optional **Advanced video mode** adds independent body-skin, face, and hair masks. It is off by default and heavy on performance. Select Smooth or Strict playback.
 - **Effects:** black, normal blur, and checkerboard blur, with independent intensity, grayscale, and mask-expansion controls. Skin and hair regions use black masks.
 - **Sites:** pause on the current site or maintain domain exceptions that also apply to its subdomains and embedded players.
@@ -56,49 +56,49 @@ Load `dist/` using the same Chrome steps above. Commands also work in PowerShell
 
 ## Examples
 
-In **Images**, enable the visible **Advanced segmentation** switch, choose **Male → Show all**, click the thighs on the person,
+In **Images**, enable the visible **Choose body areas** switch, choose **Male → Show all**, click the thighs on the person,
 and choose **Hide** to cover only exposed thigh skin. **Groin (pelvis)** now has
 its own choice; hide it alongside thighs to cover both while leaving the torso
 shown. Face, hair, neck and
 other shown areas keep their own choices. The Female tab is independent.
 Click a face to choose Show, Black, Blur or Pixelate. Blur and Pixelate show a strength slider directly below; strength is separate for each gender.
 
-The switch offers **Fast** (stride 16) and **Quality** (stride 8, slower with finer detail). With Advanced segmentation off,
+The switch offers **Fast** (stride 16) and **Quality** (stride 8, slower with finer detail). With Choose body areas off,
 the body becomes one skin area with Show all / Hide all; face and hair remain
-independent. Advanced segmentation adds processing time and
+independent. Choose body areas adds processing time and
 can misclassify overlaps. Chest and belly are separate approximate halves along
 the person’s shoulder-to-hip direction, including rotated or lying-down bodies.
 Cropped or uncertain anatomy can retain an Unresolved torso fallback. Neck is
 estimated from head-labeled body skin.
 
-Advanced segmentation is disabled by default. Diagnostic outlines add colored anatomy
+Choose body areas is disabled by default. Diagnostic outlines add colored anatomy
 maps, including clothing used for threshold measurements; media attributes include `data-local-media-censor-body-regions` and
 BodyPix preprocessing/run/decode timing fields. Cached policy changes report
 zero new model work. See [body-region controls and diagnostics](docs/BODY-REGIONS.md).
 
 | Goal | Settings |
 |---|---|
-| Hide male thigh skin only | Advanced segmentation on → Male → Show all → click thighs → Hide. |
+| Hide male thigh skin only | Choose body areas on → Male → Show all → click thighs → Hide. |
 | Leave men entirely visible | Male → Show all in Images; Videos → Male → Show (or Show all in advanced video mode). |
 | Cover female skin and hair, show face | Female → Hide all → click face → Show. |
 | Blur male faces but black female faces | Male → face → Blur; Female → face → Black. |
-| Hide the body only above 50% belly skin | Advanced segmentation → belly → Show → Hide entire body → Skin above 50 → choose the face action. |
+| Hide the body only above 50% belly skin | Custom rules → Rules for → add a belly-above-50% condition → Entire body → choose the face action. |
 | Cover female video skin but show face/hair | Videos → Advanced video mode → Female → body skin → Hide; face and hair → Show. |
 | Keep one website unrestricted | Pause on this site, or manage domain exceptions in All settings → Websites. |
 
 ### Area choices and face effects
 
-The main controls stay above the gender editor. Scroll within the popup to choose an area. With Advanced segmentation on, the diagram controls individual skin areas; with it off, Show all / Hide all change body skin together and preserve face/hair choices.
+The main controls stay above the gender editor. Scroll within the popup to choose an area. With Choose body areas on, the diagram controls individual skin areas; with it off, Show all / Hide all change body skin together and preserve face/hair choices.
 
 <p><img src="docs/images/popup-areas.png" width="360" alt="Male editor with only thigh skin hidden"> <img src="docs/images/popup-face.png" width="360" alt="Male face blur with its strength directly below the action buttons"></p>
 
 <p><img src="docs/images/popup-basic.png" width="360" alt="Basic segmentation with one body-skin shape and separate face and hair"> <img src="docs/images/settings-ar.png" width="340" alt="Arabic settings with right-to-left body-area controls"></p>
 
-Cover area has Chosen areas and Whole body. Ordinary skin-area Hide covers exposed skin only. A part threshold can also cover clothing: select a part, set it to **Show** for conditional-only coverage, choose **Hide entire part** or **Hide entire body**, and set **Skin above (%)**. The denominator includes the visible clothed area of that part; exactly 50% does not trigger a 50% rule. Whole-body thresholds offer **Black** or **Show** for the face. These rules are image-only; old global exposure rules remain disabled.
+Cover area has Chosen areas and Whole body. Ordinary Hide covers exposed skin. **Cover style** offers Black or Smart clothing for image/video body coverage; hair stays black and face effects stay independent. **Custom rules**, below the editors, handles all conditional coverage with its own group selector. Old simple thresholds remain editable as rules.
 
-### Part thresholds and video masks
+### Custom rules and video masks
 
-<p><img src="docs/images/part-threshold-body.png" width="440" alt="Male belly threshold: hide the entire body above 50 percent skin while showing the face"> <img src="docs/images/popup-advanced-video.png" width="440" alt="Visual advanced video editor with independently selectable body skin, face and hair"></p>
+See the [custom rule guide](docs/USER_GUIDE.md) for combined conditions and explicit coverage effects.
 
 In **Videos**, the person diagram controls the whole-person Show/Black/Blur/Pixelate choice. Turn on **Advanced video mode** to choose body skin, face and hair separately for each gender. Body skin excludes faces. All three categories come from one MediaPipe Selfie pass; selecting face or hair does not add another inference run. YOLO silhouettes or fast boxes still assign masks to people. Videos never run BodyPix anatomy segmentation or image part thresholds.
 
@@ -130,20 +130,21 @@ Supported paths include regular images, readable sampled video, live video strea
 
 For Google Meet, reload the extension and refresh the Meet tab after updating. Enable **Videos**, check that `meet.google.com` is not paused or excepted, and select the people and effect to cover. Shared presentations keep their readable content, with detected selected people covered. **Faster conservative person boxes** reduce inference work for meeting grids. Filtering changes your local view; it does not alter anyone's transmitted camera or shared screen. Live Meet layouts have not been verified in an actual meeting; the browser regression fixture checks four incoming WebRTC streams, including a presentation.
 
-Animated images, DRM/unreadable streams, canvas players, browser-internal pages, pseudo-element backgrounds, `image-set()`, and many picture-in-picture/native-fullscreen paths are unsupported. Protected media can stay black after acquisition or model failure. Blur and mosaic can leave shapes recognizable. Strict playback reduces stale-mask display but still cannot guarantee complete coverage; Smooth may display an older mask longer.
+Single-frame GIFs follow **Images** settings; multi-frame GIFs follow **Videos** settings, including advanced masks and clothing fill. Animated GIFs and GIF CSS backgrounds display decoded frames with their matching analysis results, skipping ahead when processing cannot keep up. Decoding preserves GIF timing, loop counts, transparency and disposal. Offscreen/hidden animations pause processing. GIF inputs are limited to 20 MB, 16 million pixels and 10,000 frames; native GIF decoding must be available in Chrome.
+
+**Advanced rules** under Image appearance combine independently editable conditions with AND/OR, compare skin percentages or test any/no skin, and force black or smart clothing on exposed skin, the selected areas or the whole body. Rules are independent per gender, editable and individually switchable. They apply to images and single-frame GIFs using image anatomy segmentation. Mask expansions for both images and videos use each person's visible body size rather than fixed analysis pixels. See the [rule and expansion guide](docs/USER_GUIDE.md).
+
+Detected hair coverage stays black when fabric fill or smart clothing is active. Clothing fill continues broad lighting from confidently owned clothing, adds gentle volume, and blends through a narrow clothing-only connection band. Skin coverage remains opaque and retains the smoothed outline. It does not borrow skin or environmental colors; uncertain clothing uses a conservative fallback. This is a lightweight reconstruction, so complex patterns and garment folds are approximate.
+
+Other animated image formats, DRM/unreadable streams, canvas players, browser-internal pages, pseudo-element backgrounds, `image-set()`, and many picture-in-picture/native-fullscreen paths are unsupported. Protected media can stay black after acquisition or model failure. Blur and mosaic can leave shapes recognizable. Strict playback reduces stale-mask display but still cannot guarantee complete coverage; Smooth may display an older mask longer.
 
 This is a browser filtering aid. It does not interpret religious rules or determine whether content is permissible. Validate the settings on the content you use. [Detailed behavior](docs/USER_GUIDE.md), [architecture](docs/ARCHITECTURE.md), and [measured performance](BENCHMARK.md) explain the practical limits. Historical benchmark numbers are not a release-wide performance guarantee.
 
-## What changed in 0.5.2
+## What changed in 0.6.0
 
-- **Per-part thresholds:** independently configure a skin percentage for each image area and gender. Cover the entire part or entire body when that percentage is exceeded. Coverage includes clothing within the chosen extent.
-- **Threshold face choice:** whole-body part rules offer Black (the default) or Show. Show reopens the face after expansion and temporarily overrides its ordinary effect. Black wins if multiple triggered body rules disagree.
-- **Chest and belly:** separate approximate halves follow the person’s orientation using existing shoulder/hip landmarks and dense anatomy. Old torso choices migrate to both; uncertain anatomy retains the torso fallback.
-- **Advanced video mode:** optional MediaPipe masks for body skin, face and hair, using either existing detector and a separate expansion control. One semantic pass returns all three categories; no anatomy model runs on videos. Off by default, with a visible performance warning.
-- **Visual video controls:** the image-style person diagram, Female/Male tabs, keyboard area selection, action buttons and advanced Show all / Hide all replace the dropdown-only layout. Image and video choices remain independent.
-- **Documentation and checks:** refreshed English/Arabic screenshots, persistence and keyboard checks, rotated torso fixtures, threshold boundary tests, and real-model checks for both video detectors. Model weights and permissions are unchanged from 0.5.1.
+Smart clothing, smoother hair coverage, combined custom rules, body-relative expansion, GIF/WebP protection, and PDF reading with editable picture boxes are included. PDFs check visible content first, prepare the next three pages, and keep the previous two cached. Automatic PDF handling requires Chrome 151+; use the popup's Open PDF reader on older supported Chrome versions.
 
-Earlier 0.5.1 startup preparation and groin improvements remain available. Read [0.5.1 release notes](docs/RELEASE-NOTES-0.5.1.md) for their historical measurements and [0.5.2 release notes](docs/RELEASE-NOTES-0.5.2.md) for this update. Accuracy, motion and performance limits remain; these tests do not guarantee complete coverage on unseen content.
+Dynamic image previews, tab resume, small thumbnails, and video motion alignment have also improved. Read the [0.6.0 release notes](docs/RELEASE-NOTES-0.6.0.md) for behavior and limitations. Historical screenshots and benchmarks do not establish accuracy or performance on unseen content.
 
 ## Development and releases
 
@@ -155,7 +156,7 @@ npm run test:browser            # UI, real extension, media and regression check
 npm run release                # Checks, build, browser suite, ZIPs and SHA-256
 ```
 
-The release command writes the extension, corresponding source, and model ZIPs to `release/v0.5.2/`. Publish all three and the checksums together. Packaging is local and never creates a commit, tag, or GitHub release. [Prepared release notes](docs/RELEASE-NOTES-0.5.2.md) · [Validation results](docs/VALIDATION.md) · [Contribution guide](CONTRIBUTING.md) · [Release instructions](docs/RELEASING.md) · [Security reporting](SECURITY.md) · [Changelog](CHANGELOG.md).
+The release command writes the extension, corresponding source, and model ZIPs to `release/v0.6.0/`. Publish all three and the checksums together. Packaging is local and never creates a commit, tag, or GitHub release. [Prepared release notes](docs/RELEASE-NOTES-0.6.0.md) · [Validation results](docs/VALIDATION.md) · [Contribution guide](CONTRIBUTING.md) · [Release instructions](docs/RELEASING.md) · [Security reporting](SECURITY.md) · [Changelog](CHANGELOG.md).
 
 ## License
 

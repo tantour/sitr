@@ -239,8 +239,10 @@ chrome.runtime.onMessage.addListener((request: Request, sender, reply) => {
     reply({ ok: true }); return false;
   }
   if (!['analyze', 'reuse-image', 'reevaluate', 'label-track', 'reset-session'].includes(request?.type)) return false;
-  const tabId = sender.tab?.id;
-  const frameId = sender.frameId;
+  const trustedPdf=sender.id===chrome.runtime.id&&sender.url?.split(/[?#]/)[0]===chrome.runtime.getURL('pdf.html');
+  const provided=(request as Request&{viewerTabId?:number}).viewerTabId;
+  const tabId = sender.tab?.id??(trustedPdf&&Number.isSafeInteger(provided)&&provided!>=0?provided:undefined);
+  const frameId = sender.frameId??(trustedPdf?0:undefined);
   if (tabId === undefined || frameId === undefined) { reply({ ok: false, error: 'Invalid sender' }); return false; }
   if (request.type === 'reset-session') {
     const owner = owners.get(request.mediaSessionId);
@@ -269,6 +271,9 @@ chrome.runtime.onMessage.addListener((request: Request, sender, reply) => {
     const { frame } = request;
     if (frame.width !== frame.height || frame.width > 416 || frame.width < 128 || frame.rgba?.byteLength !== frame.width * frame.height * 4 || frame.rgba.byteLength > ENGINE.maxPayloadBytes) {
       reply({ ok: false, error: 'Invalid frame' }); return false;
+    }
+    if((frame.nativeWidth!==undefined||frame.nativeHeight!==undefined)&&(!Number.isSafeInteger(frame.nativeWidth)||!Number.isSafeInteger(frame.nativeHeight)||frame.nativeWidth!<=0||frame.nativeHeight!<=0)){
+      reply({ok:false,error:'Invalid source dimensions'});return false;
     }
     if ((frame.faceRgba || frame.faceSize) && (![320, 416, 512, 640].includes(frame.faceSize ?? 0) || frame.faceRgba?.byteLength !== frame.faceSize! * frame.faceSize! * 4 || frame.faceRgba.byteLength > ENGINE.maxFacePayloadBytes)) {
       reply({ ok: false, error: 'Invalid face frame' }); return false;

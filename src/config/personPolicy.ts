@@ -34,7 +34,7 @@ export function hasAdvancedVideoCoverage(policy: PersonPolicy): boolean {
 }
 export function hasThresholdFaceOpenings(settings: Settings): boolean {
   return ['female', 'male'].some(gender => genderPolicy(settings, gender as 'female' | 'male')
-    .partThresholds?.some(rule => rule.target === 'body' && rule.face === 'show'));
+    .partThresholds?.some(rule => rule.enabled !== false && rule.target === 'body' && rule.face === 'show'));
 }
 export function policyFor(settings: Settings, person: { label: Label; labelUsable: boolean }): PersonPolicy {
   if (person.labelUsable && person.label !== 'unknown') return genderPolicy(settings, person.label);
@@ -51,12 +51,12 @@ export function policyFor(settings: Settings, person: { label: Label; labelUsabl
     faceStrength: Math.max(...[female, male].filter(policy => policy.face === strictEffect(female.face, male.face)).map(policy => faceStrength(settings, policy))) };
 }
 export function hasImageCoverage(policy: PersonPolicy): boolean {
-  return !!policy.partThresholds?.length || policy.hair === 'hide' || policy.face !== 'show' || policy.otherSkin === 'hide' || BODY_REGIONS.some(area => policy.skin[area] === 'hide');
+  return !!policy.partThresholds?.some(rule=>rule.enabled!==false) || policy.hair === 'hide' || policy.face !== 'show' || policy.otherSkin === 'hide' || BODY_REGIONS.some(area => policy.skin[area] === 'hide');
 }
 export function hasBodyCoverage(settings: Settings): boolean {
   if (!settings.personPolicies) return settings.bodySkin;
   return ['female', 'male'].some(gender => { const policy = genderPolicy(settings, gender as 'female' | 'male');
-    return !!policy.partThresholds?.length || policy.otherSkin === 'hide' || BODY_REGIONS.some(area => policy.skin[area] === 'hide'); });
+    return !!policy.partThresholds?.some(rule=>rule.enabled!==false) || policy.otherSkin === 'hide' || BODY_REGIONS.some(area => policy.skin[area] === 'hide'); });
 }
 export function hasFaceEffects(settings: Settings): boolean {
   return genderPolicy(settings, 'female').face !== 'show' || genderPolicy(settings, 'male').face !== 'show';
@@ -67,3 +67,5 @@ export function skinHidden(policy: PersonPolicy, region: number | undefined, has
   const area: BodyRegion | undefined = BODY_REGIONS[(region ?? 0) - 1];
   return area ? policy.skin[area] === 'hide' : policy.otherSkin === 'hide';
 }
+
+export function hasSmartRules(settings:Settings):boolean{return Object.values(settings.personPolicies??{}).some(policy=>policy.partThresholds?.some(rule=>rule.enabled!==false&&rule.effect==='smart'));}

@@ -15,10 +15,11 @@ const bundle = await build({ configFile: false, publicDir: false, logLevel: 'err
     lib: { entry: resolve('scripts/groin-probe-entry.ts'), name: 'GroinProbe', formats: ['iife'] },
     rollupOptions: { output: { inlineDynamicImports: true } } } });
 // Reference points were placed on the fully clothed photographs before model
-// inference. Bus coordinates refer to the upstream 810×1080 photograph.
+// inference. Pelvis points mark the hip band; the fourth standing/crossed point
+// marks the previously overextended upper-thigh region. Bus coordinates refer to the upstream 810×1080 photograph.
 const fixtures = [
-  { name: 'standing-man', file: 'bus.jpg', crop: [50, 390, 205, 530], points: [[132, 720], [175, 745], [145, 620]] },
-  { name: 'crossed-legs-man', file: 'bus.jpg', crop: [220, 395, 140, 465], points: [[280, 718], [300, 740], [292, 600]] },
+  { name: 'standing-man', file: 'bus.jpg', crop: [50, 390, 205, 530], points: [[128, 680], [175, 745], [145, 620], [132, 720]] },
+  { name: 'crossed-legs-man', file: 'bus.jpg', crop: [220, 395, 140, 465], points: [[295, 635], [300, 740], [292, 600], [280, 718]] },
   { name: 'seated-man', file: 'man-seated.jpg', points: [[214, 431], [270, 470], [212, 290]] },
   { name: 'multiple-men', file: 'bus.jpg', points: [[132, 720], [280, 718]] },
   { name: 'torso-crop-man', file: 'man-profile.jpg', points: [] },
@@ -31,7 +32,7 @@ try {
   const page = await context.newPage(); await page.goto(new URL('popup.html', sw.url()).href);
   await page.evaluate((Array.isArray(bundle) ? bundle[0] : bundle).output.find(item => item.type === 'chunk').code);
   const results = [];
-  for (const mode of ['faster', 'finer']) for (const fixture of fixtures) for (const mirror of [false, true]) {
+  for (const mode of ['faster', 'finer']) for (const fixture of fixtures.filter(fixture=>!process.env.SITR_GROIN_FIXTURE||fixture.name===process.env.SITR_GROIN_FIXTURE)) for (const mirror of [false, true]) {
     const bytes = (await readFile(resolve('tests/fixtures', fixture.file))).toString('base64');
     const result = await page.evaluate(args => globalThis.groinProbe(args), { ...fixture, bytes, mode, mirror, backend: 'wasm' });
     const { png, ...metrics } = result;
@@ -47,6 +48,7 @@ try {
     r.fixture === 'crossed-legs-man' && r.mode === 'finer')) {
     assert(result.people > 0); assert(result.groinPixels > 0);
     assert(result.sample[0].counts[9] >= 13, 'Clothed pelvic landmark must lie predominantly in the groin region');
+    if(result.fixture==='standing-man'||result.fixture==='crossed-legs-man')assert.equal(result.sample[3].label,5,'Former deep groin sample must remain thigh');
     // Damage in the old seated photograph can erase foreground on one mirrored
     // thigh. Keep that uncertainty explicit rather than inventing a known part.
     if (result.fixture === 'seated-man' && result.mode === 'finer' && result.mirror)

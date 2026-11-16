@@ -17,10 +17,11 @@ export class FrameMotion {
   private queued?: { frame: ImageBitmap; at: number };
   private anchor?: MotionAnchor;
   private currentOffsets = new Map<string, { x: number; y: number }>();
-  private displayOffsets = new Map<string, { x: number; y: number }>();
-  private lastDisplayAt = 0;
+  private measuredPositions = new Map<string, { x: number; y: number }>();
+  private measuredAt = 0;
   private velocities = new Map<string, { x: number; y: number }>();
   private lastObservedAt = 0;
+  private offsetAt = 0;
   private lastCaptureRequestedAt = 0;
   private alignedSequence = -1;
   private reliable = false;
@@ -50,26 +51,40 @@ export class FrameMotion {
       if (value.source === 'frame') this.inFlight = false;
       this.frames = value.frames;
       this.processingMs = value.processingMs ?? this.processingMs;
-      const previousOffsets = this.currentOffsets;
-      const previousAt = this.lastObservedAt;
+      // A frame reply can already be queued when a newer analysis rebases the
+      // masks. Its offsets belong to the previous anchor and must not move them.
+      if (this.anchor && value.sequence !== this.anchor.sequence) {
+        if(value.cut)this.onUpdate(true);
+        this.flushQueued();
+        return;
+      }
       this.lastObservedAt = value.at;
+      this.offsetAt = value.at;
       this.alignedSequence = value.sequence;
       this.reliable = value.reliable;
       this.reliableIds = new Set(value.reliableIds);
       this.currentOffsets = new Map(value.offsets);
-      if (value.source === 'frame' && previousAt && value.at > previousAt && value.at - previousAt < 250) {
-        const dt = (value.at - previousAt) / 1000;
-        for (const [id, current] of this.currentOffsets) {
-          const previous = previousOffsets.get(id);
-          if (previous) this.velocities.set(id, { x: Math.max(-0.5, Math.min(0.5, (current.x - previous.x) / dt)),
-            y: Math.max(-0.5, Math.min(0.5, (current.y - previous.y) / dt)) });
+      if (value.source === 'frame') {
+        const dt=(value.at-this.measuredAt)/1000,positions=new Map<string,{x:number;y:number}>();
+        for(const track of this.anchor?.tracks??[]){
+          const offset=this.currentOffsets.get(track.id);
+          if(!offset||!this.reliableIds.has(track.id)){this.velocities.delete(track.id);continue;}
+          const current={x:track.box.x+track.box.width/2+offset.x,y:track.box.y+track.box.height/2+offset.y};
+          positions.set(track.id,current);
+          const previous=this.measuredPositions.get(track.id);
+          // Compare world positions, not offsets: rebasing changes an offset
+          // even when the person has continued moving at exactly the same speed.
+          if(previous&&dt>0&&dt<.25){
+            const old=this.velocities.get(track.id);
+            const x=Math.max(-1.5,Math.min(1.5,(current.x-previous.x)/dt));
+            const y=Math.max(-1.5,Math.min(1.5,(current.y-previous.y)/dt));
+            this.velocities.set(track.id,{x:old?(old.x+x)*.5:x,y:old?(old.y+y)*.5:y});
+          }
         }
+        this.measuredPositions=positions;this.measuredAt=value.at;
       }
       this.onUpdate(value.cut);
-      if (this.queued && !this.inFlight) {
-        const queued = this.queued; this.queued = undefined;
-        this.sendFrame(queued.frame, queued.at);
-      }
+      this.flushQueued();
       };
       try {
         this.host.contentWindow?.postMessage({ type: 'connect' }, new URL(this.host.src).origin, [channel.port2]);
@@ -81,6 +96,9 @@ export class FrameMotion {
     };
     attach();
     setTimeout(() => { if (!this.connected && !this.failed) { this.failed = true; this.error = 'Motion host did not connect'; } }, 3000);
+  }
+  private flushQueued():void{
+    if(this.queued&&!this.inFlight){const queued=this.queued;this.queued=undefined;this.sendFrame(queued.frame,queued.at);}
   }
   private sendFrame(frame: ImageBitmap, at: number): void {
     try {
@@ -122,37 +140,35 @@ export class FrameMotion {
       });
     }
     this.currentOffsets = provisional;
-    this.displayOffsets = new Map(provisional);
-    this.lastDisplayAt = Date.now();
+    this.offsetAt = Date.now();
     this.reliable = false;
     try { if (this.connected) this.port?.postMessage({ type: 'align', anchor: this.anchor, generation: this.generation }); }
     catch (error) { this.failed = true; this.error = String(error); }
   }
   offsets(now = Date.now()): Map<string, { x: number; y: number }> {
-    const dt = Math.min(0.08, Math.max(0, now - this.lastObservedAt) / 1000);
-    const displayDt = this.lastDisplayAt ? Math.min(100, Math.max(0, now - this.lastDisplayAt)) : 100;
-    const blend = 1 - Math.exp(-displayDt / 45);
-    const next = new Map([...this.currentOffsets].map(([id, offset]) => {
-      const velocity = this.velocities.get(id);
-      const target = { x: offset.x + (velocity?.x ?? 0) * dt, y: offset.y + (velocity?.y ?? 0) * dt };
-      const shown = this.displayOffsets.get(id);
-      return [id, shown ? { x: shown.x + (target.x - shown.x) * blend, y: shown.y + (target.y - shown.y) * blend } : target] as const;
+    // Follow measured movement immediately. A display low-pass adds visible
+    // trailing latency; only extrapolate the short worker-delivery interval.
+    const dt=Math.min(.03,Math.max(0,now-this.offsetAt)/1000);
+    return new Map([...this.currentOffsets].map(([id,offset])=>{
+      const velocity=this.reliableIds.has(id)?this.velocities.get(id):undefined;
+      return [id,{x:offset.x+(velocity?.x??0)*dt,y:offset.y+(velocity?.y??0)*dt}];
     }));
-    this.displayOffsets = next;
-    this.lastDisplayAt = now;
-    return next;
   }
+
   predictedTracks(now = Date.now()): Array<{ id: string; box: { x: number; y: number; width: number; height: number } }> {
-    if (this.failed || now - this.lastObservedAt > 200) return [];
+    if (this.failed || now - this.lastObservedAt > 100) return [];
     const offsets = this.offsets(now);
     return (this.anchor?.tracks ?? []).filter(track => this.reliableIds.has(track.id)).map(track => {
       const shift = offsets.get(track.id);
       return { id: track.id, box: { ...track.box, x: track.box.x + (shift?.x ?? 0), y: track.box.y + (shift?.y ?? 0) } };
     });
   }
-  canPropagate(result: AnalysisResult, now: number, maxAgeMs = 900): boolean {
+  trackingLost(result:AnalysisResult):boolean{
+    return this.failed||this.alignedSequence===result.key.sequence&&!this.reliable;
+  }
+  canPropagate(result: AnalysisResult, now: number, maxAgeMs = 250): boolean {
     return !this.failed && this.reliable && this.alignedSequence === result.key.sequence &&
-      now - result.capturedAtMs <= maxAgeMs && now - this.lastObservedAt <= 200;
+      now - result.capturedAtMs <= maxAgeMs && now - this.lastObservedAt <= 100;
   }
   reset(): void {
     this.generation++;
@@ -160,14 +176,15 @@ export class FrameMotion {
     this.inFlight = false;
     this.anchor = undefined;
     this.currentOffsets.clear();
-    this.displayOffsets.clear();
-    this.lastDisplayAt = 0;
+    this.measuredPositions.clear();
+    this.measuredAt = 0;
     this.velocities.clear();
     this.lastCaptureRequestedAt = 0;
     this.alignedSequence = -1;
     this.reliable = false;
     this.reliableIds.clear();
     this.lastObservedAt = 0;
+    this.offsetAt = 0;
     if (this.connected) this.port?.postMessage({ type: 'reset', generation: this.generation });
   }
   dispose(): void { this.queued?.frame.close(); this.port?.close(); this.host.remove(); }

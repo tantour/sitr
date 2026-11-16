@@ -1,25 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Sitr contributors
 import type { AnalysisResult } from '../state/contracts';
+import { applyFabric, applyClothing, softenFabricEdges, shadeFabricRuns } from './fabric';
 import { decodeImageBlob } from '../media/capture';
 
 /** Bake a mask into the source image, letting CSS handle its layout and repetition. */
-export async function renderBackground(blob: Blob, result: AnalysisResult): Promise<Blob> {
+export async function renderBackground(blob: Blob, result: AnalysisResult,maskOnly=false): Promise<Blob> {
   const source = await decodeImageBlob(blob);
   try {
     const canvas = document.createElement('canvas');
     canvas.width = source.width; canvas.height = source.height;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Background canvas unavailable');
-    ctx.drawImage(source.source, 0, 0);
+    if(!maskOnly)ctx.drawImage(source.source, 0, 0);
+    if(result.black){ctx.fillStyle='#000';ctx.fillRect(0,0,source.width,source.height);return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('Mask encoding failed')),'image/png'));}
     const side = result.width;
     const scale = Math.min(side / source.width, side / source.height);
     const sw = source.width * scale, sh = source.height * scale;
     const sx = (side - sw) / 2, sy = (side - sh) / 2;
-    const paint = (alpha: Uint8Array, effect?: AnalysisResult['effect']) => {
+    const paint = (alpha: Uint8Array, effect?: AnalysisResult['effect'],fabric=result.fabricFill) => {
       const mask = document.createElement('canvas'); mask.width = side; mask.height = side;
       const pixels = new Uint8ClampedArray(side * side * 4);
       for (let i = 0; i < alpha.length; i++) pixels[4 * i + 3] = alpha[i];
+      if (fabric && result.clothingRgb) applyClothing(pixels, result.clothingRgb);
+      else if (fabric) applyFabric(pixels, side, side);
+      if (fabric) {shadeFabricRuns(pixels,side,side);softenFabricEdges(pixels, side, side);}
       mask.getContext('2d')!.putImageData(new ImageData(pixels, side, side), 0, 0);
       const layer = document.createElement('canvas'); layer.width = source.width; layer.height = source.height;
       const layerCtx = layer.getContext('2d')!;
@@ -47,7 +52,9 @@ export async function renderBackground(blob: Blob, result: AnalysisResult): Prom
     paint(alpha, result.effect);
     if (result.faceMask) paint(result.faceMask, result.faceEffect);
     for (const layer of result.faceLayers ?? []) paint(layer.alpha, layer.effect);
-    if (result.blackMask) paint(result.blackMask);
+    if(result.smartCoverMask)paint(result.smartCoverMask,undefined,true);
+    for(const track of result.trackMasks??[])if(track.blackAlpha)paint(track.blackAlpha,undefined,false);
+    if (result.blackMask) paint(result.blackMask,undefined,false);
     // Debug graphics must be baked into the same source as the mask so CSS
     // cover/contain, cropping and repeated tiles transform them together.
     const color = (label: string) => label === 'female' ? '#ff4dd2' : label === 'male' ? '#39e6ff' : '#ffc247';

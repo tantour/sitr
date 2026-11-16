@@ -22,7 +22,7 @@ describe('advanced video semantic coverage', () => {
   it('defaults off and validates expansion without invalidating image inference', () => {
     expect(normalizeSettings({}).advancedVideoMode).toBe(false);
     expect(normalizeSettings({ advancedVideoMode: 'true' }).advancedVideoMode).toBe(false);
-    expect(normalizeSettings({ advancedVideoMode: true, videoSkinExpansion: 80 }).videoSkinExpansion).toBe(24);
+    expect(normalizeSettings({ advancedVideoMode: true, videoSkinExpansion: 80 }).videoSkinExpansion).toBe(12);
     expect(normalizeSettings({ videoSkinExpansion: -3 }).videoSkinExpansion).toBe(0);
     expect(imageAnalysisKey(DEFAULT_SETTINGS)).toBe(imageAnalysisKey({ ...DEFAULT_SETTINGS, advancedVideoMode: true, videoSkinExpansion: 15 }));
     expect(bodyRegionsEnabled({ ...settings(), imageBodyRegionMode: 'finer' }, 'video')).toBe(false);
@@ -49,7 +49,7 @@ describe('advanced video semantic coverage', () => {
     expect(videoSkinMasks([], new Uint8Array(n).fill(2), settings(), side)).toEqual([]);
   });
   it('expands into nearby clothing, keeping shown face/hair and exempt people open', () => {
-    const current = settings({ videoSkinExpansion: 2 }), categories = new Uint8Array(n).fill(4);
+    const current = settings({ videoSkinExpansion: 100/side }), categories = new Uint8Array(n).fill(4);
     categories[5 * side + 4] = 2; categories[5 * side + 5] = 3; categories[4 * side + 4] = 1;
     const tracks = [makeTrack('f', 'female', x => x < 7), makeTrack('m', 'male', x => x >= 7)];
     const [mask] = videoSkinMasks(tracks, categories, current, side);
@@ -72,4 +72,18 @@ describe('advanced video semantic coverage', () => {
     expect(personSelected(track, { ...current, advancedVideoMode: false }, 'video')).toBe(false);
     expect(() => videoSkinMasks([track], new Uint8Array(3), current, side)).toThrow('grid mismatch');
   });
+});
+it('omits empty advanced masks so invisible layers do not consume rendering work',()=>{
+ const track=makeTrack('f','female');expect(videoSkinMasks([track],new Uint8Array(n).fill(4),settings(),side)).toEqual([]);
+});
+it('cropped video dilation exactly matches full-grid coverage at every border and expansion radius',async()=>{
+ const {dilate}=await import('../src/rendering/compositor');
+ for(const radius of [0,1,2,5])for(const seed of [0,5,side+1,n-1,Math.floor(n/2)]){
+  const categories=new Uint8Array(n).fill(4);categories[seed]=2;
+  const showFace=Math.max(0,seed-1);if(showFace!==seed)categories[showFace]=3;
+  const expected=dilate(Uint8Array.from(categories,v=>v===2?255:0),side,side,radius);
+  for(let p=0;p<n;p++)if(categories[p]===3)expected[p]=0;
+  const output=videoSkinMasks([makeTrack('f','female')],categories,settings({videoSkinExpansion:radius/side*100}),side);
+  expect(output[0].alpha).toEqual(expected);
+ }
 });

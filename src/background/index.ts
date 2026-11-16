@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {syncPdfHandler} from '../pdf/mime';
+import {verifiedImageBlob} from '../media/imageBlob';
 // Copyright (C) 2026 Sitr contributors
 import { DEFAULT_SETTINGS, normalizeSettings, resolveOnnxThreads, type Settings } from '../config/settings';
 import { editablePolicies } from '../config/personPolicy';
@@ -17,7 +19,7 @@ async function current(): Promise<Settings> {
   return normalizeSettings(value);
 }
 chrome.runtime.onInstalled.addListener(() => {
-  void current().then(s => chrome.storage.local.set({ settings: s }));
+  void current().then(async s => {await chrome.storage.local.set({ settings: s });await syncPdfHandler(s.enabled&&s.pdfs);});
 });
 chrome.runtime.onMessage.addListener((message: { type?: string; patch?: Partial<Settings> }, sender, reply) => {
   if (message?.type === 'get-top-level-host') {
@@ -44,6 +46,7 @@ chrome.runtime.onMessage.addListener((message: { type?: string; patch?: Partial<
         await chrome.runtime.sendMessage({ type: 'retry-engine', threads: resolveOnnxThreads(next.onnxThreads, navigator.hardwareConcurrency) });
       }
       await chrome.storage.local.set({ settings: next });
+      if(next.pdfs!==old.pdfs||next.enabled!==old.enabled)await syncPdfHandler(next.enabled&&next.pdfs);
       return next;
     });
     settingWrites = write.then(() => {}, () => {});
@@ -59,8 +62,7 @@ chrome.runtime.onMessage.addListener((message: { type?: string; patch?: Partial<
     if (!url || !/^https?:\/\//i.test(url)) { reply({ ok: false, error: 'Unsupported URL' }); return false; }
     void fetch(url, { credentials: 'include', cache: 'default', signal: AbortSignal.timeout(10000) }).then(async response => {
       if (!response.ok) throw new Error(`Image fetch failed: ${response.status}`);
-      const blob = await response.blob();
-      if (!blob.type.startsWith('image/') || blob.size > 20_000_000) throw new Error('Unsupported image response');
+      const blob = await verifiedImageBlob(await response.blob());
       reply({ ok: true, blob });
     }).catch(error => reply({ ok: false, error: String(error) }));
     return true;
@@ -69,7 +71,7 @@ chrome.runtime.onMessage.addListener((message: { type?: string; patch?: Partial<
 });
 void chrome.storage.local.get('settings').then(value => {
   if (!value.settings) return chrome.storage.local.set({ settings: DEFAULT_SETTINGS });
-}).then(() => ensureOffscreen()).catch(error => console.warn('Engine startup unavailable:', error));
+}).then(async () => {const s=await current();await syncPdfHandler(s.enabled&&s.pdfs);await ensureOffscreen();}).catch(error => console.warn('Engine startup unavailable:', error));
 chrome.runtime.onStartup.addListener(() => {
   void ensureOffscreen().catch(error => console.warn('Engine startup unavailable:', error));
 });

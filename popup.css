@@ -195,12 +195,6 @@ body[data-view=settings] .interface-controls{margin-inline-start:auto}
 .person-area-controls{min-width:0;padding-top:8px}
 .area-picker-label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px}
 #personAreaSelect,#videoAreaSelect{width:100%;font-size:11px;padding-inline:5px}
-#partThresholdControls{border-top:1px solid var(--line);margin-top:16px;padding-top:12px}
-#partThresholdControls label{display:block;font-size:11px;margin-block:0 6px}
-#partThresholdControls select,#partThresholdControls input{width:100%;min-height:34px;font:inherit;box-sizing:border-box}
-#partThresholdControls input{padding:6px 9px;border:1px solid var(--field-border);border-radius:6px;background:var(--white);color:var(--ink-deep);caret-color:var(--sea);font-variant-numeric:tabular-nums}
-#partThresholdPercentControl{margin-top:12px}
-#partThresholdFaceControl{margin-top:12px}
 .video-editor{margin-top:16px}
 #advancedVideoControls{border-top:1px solid var(--line);padding-top:10px}
 .video-editor .person-policy-panel{grid-template-columns:minmax(90px,.8fr) minmax(0,1.2fr);gap:16px}
@@ -244,3 +238,83 @@ body[data-view=popup] .person-diagram{height:240px}
 .bodypix-toggle strong{font-size:12px}
 .person-area-controls h3{margin-top:14px}
 body[data-view=settings] .image-settings-bar .setting-field{margin-top:0}
+
+.advanced-rule { border-block-start:1px solid var(--line, #dbe5e0); padding-block:12px; }
+.advanced-rule > summary { cursor:pointer; overflow-wrap:anywhere; line-height:1.5; }
+.advanced-rule .setting-field { margin-block:12px; }
+.rule-areas { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-block:12px; border:0; padding:0; min-inline-size:0; }
+.rule-areas legend { font-weight:600; margin-block-end:8px; }
+.rule-areas label { display:flex; align-items:center; gap:6px; margin:0; font-weight:400; min-inline-size:0; }
+.rule-areas input { flex:none; inline-size:16px; block-size:16px; }
+.rule-add { display:flex; flex-wrap:wrap; gap:8px; margin-block-start:12px; }
+
+.rule-section{border:0;padding:0;margin:18px 0;min-inline-size:0}
+.rule-section>legend{font-size:14px;font-weight:650;margin-block-end:6px}
+.rule-condition{border:1px solid var(--line);padding:12px;margin:12px 0;min-inline-size:0}
+.rule-condition>legend{font-weight:600;padding-inline:4px}
+.advanced-rule input[type=text],.advanced-rule input[type=number]{min-inline-size:0;max-inline-size:100%;background:var(--white);color:var(--ink-deep);border:1px solid var(--field-border);border-radius:6px;padding:7px 9px}
+
+/* Everyday appearance choices, shared by image and video coverage. */
+.cover-style{border:0;padding:0;margin:18px 0 8px;min-inline-size:0}
+.cover-style>legend{font-size:13px;font-weight:650;margin-block-end:9px;padding:0}
+.cover-style-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.cover-style-choice{display:flex;align-items:center;gap:8px;min-inline-size:0;min-height:64px;padding:10px;border:1px solid var(--line);border-radius:7px;cursor:pointer}
+.cover-style-choice:has(input:checked){background:var(--sea-soft);border-color:var(--sea)}
+.cover-style-choice:has(input:focus-visible){outline:2px solid var(--focus);outline-offset:3px}
+.cover-style-choice:hover{border-color:var(--sea)}
+.cover-style-choice:has(input:disabled){opacity:.6;cursor:wait}
+.cover-style-choice input{inline-size:14px;block-size:14px;flex:none;margin:0}
+.cover-style-choice strong{display:block;font-size:12px;line-height:1.3;font-weight:650}
+.cover-style-choice small{display:block;font-size:10px;line-height:1.4;color:var(--muted);margin-block-start:3px}
+.style-swatch{display:grid;place-items:center;inline-size:26px;block-size:30px;border-radius:4px;flex:none}
+.style-black{background:#141818}
+.style-fabric{background:var(--paper);color:var(--sea)}
+.style-fabric svg{inline-size:24px;block-size:24px;stroke:currentColor;stroke-width:1.5;stroke-linejoin:round}
+.cover-style>.setting-hint{font-size:11px;margin-block:8px 0;max-inline-size:70ch}
+.editor-intro{font-size:11px;line-height:1.5;color:var(--muted);margin-block:0 14px}
+body[data-view=settings] .appearance-group>h2{margin-block-end:5px}
+body[data-view=settings] .editor-intro{font-size:12px;margin-block-end:18px;max-inline-size:50ch}
+body[data-view=settings] .cover-style{margin-block:22px 4px}
+body[data-view=settings] .cover-style-options{max-inline-size:640px}
+body[data-view=settings] .cover-style-choice{padding:12px 14px;min-height:70px}
+body[data-view=settings] .cover-style-choice strong{font-size:14px}
+body[data-view=settings] .cover-style-choice small{font-size:12px}
+#advancedRules{margin-block:8px 16px;padding-block:16px;border-block-start:1px solid var(--line)}
+#advancedRules>summary{font-weight:650;font-size:13px;cursor:pointer}
+#advancedRules>.setting-hint{margin-block:10px 14px;max-inline-size:68ch}
+.rule-help{margin-block:12px 16px;font-size:12px;color:var(--muted)}
+.rule-help>summary{cursor:pointer;color:var(--sea)}
+.rule-help>.setting-hint{max-inline-size:68ch}
+.rules-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-block:14px 10px}
+.rules-toolbar .setting-field{display:flex;align-items:center;gap:10px;margin:0}
+.rules-toolbar select{min-inline-size:120px}
+.rules-toolbar p{margin:0!important}
+@media(min-width:761px){body[data-view=settings] #videoPanel{border-inline-start:1px solid var(--line);padding-inline-start:24px}body[data-view=settings] .appearance-columns{gap:26px}}
+@media(prefers-reduced-motion:reduce){.switch-track,.switch-track:after{transition:none}}
+
+/* Compact daily controls; give longer rule forms a readable width. */
+body[data-view=popup] .cover-style{margin-block:10px 4px}
+body[data-view=popup] .cover-style>legend{float:inline-start;inline-size:70px;line-height:40px;margin:0;font-size:12px}
+body[data-view=popup] .cover-style-options{margin-inline-start:78px;gap:6px}
+body[data-view=popup] .cover-style-choice{min-height:40px;padding:7px;gap:6px}
+body[data-view=popup] .cover-style-choice strong{font-size:11px}
+body[data-view=popup] .cover-style-choice small,body[data-view=popup] .style-swatch,body[data-view=popup] .editor-intro{display:none}
+body[data-view=popup] .cover-style>.setting-hint{clear:both;padding-block-start:5px;font-size:10px;line-height:1.35;margin:0}
+body[data-view=settings] [data-settings-panel=coverage]{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:20px;align-items:start}
+body[data-view=settings] [data-settings-panel=coverage]>.appearance-settings{grid-column:1/-1;margin-block-start:22px}
+body[data-view=settings] [data-settings-panel=coverage]>.primary-controls{padding:0;align-self:center;max-width:none}
+body[data-view=settings] [data-settings-panel=coverage]>.primary-controls .media-options{margin-top:0}
+.advanced-rule{max-inline-size:740px}
+.advanced-rule .setting-field{display:grid;grid-template-columns:1fr;gap:6px;align-items:start}
+.advanced-rule input[type=text],.advanced-rule input[type=number]{inline-size:100%;min-height:36px}
+.rule-condition{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) minmax(100px,.65fr);gap:12px;align-items:end}
+.rule-condition>.setting-field{margin:0!important;font-size:12px}
+.rule-condition>.setting-field select{margin:0!important}
+.rule-condition>.rule-areas{grid-column:1/-1}
+.rule-condition>button{justify-self:start;grid-column:1/-1}
+@media(max-width:760px){
+ body[data-view=settings] [data-settings-panel=coverage]{grid-template-columns:minmax(0,1fr)}
+ body[data-view=settings] [data-settings-panel=coverage]>.primary-controls{padding-block:18px 0}
+ .rule-condition{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+ .rule-condition>.setting-field:first-of-type{grid-column:1/-1}
+}

@@ -57,3 +57,8 @@ it('clips translated masks at the border without wrapping rows', () => {
   expect(projected[0].mask[19]).toBe(0);
   expect(projected[0].mask.reduce((a, b) => a + b, 0)).toBe(1);
 });
+it('accepts tiny detector box jitter in buffered motion without rescaling mask ownership',()=>{
+ const {cadence,track,next}=fixture();
+ const projected=cadence.project({...next,motionTracks:[{id:track.id,box:{...next.motionTracks![0].box,width:track.box.width+.005}}]},'10:segment:.1',[track])!;
+ expect(projected).toHaveLength(1);expect(projected[0].box.width).toBe(track.box.width);expect(projected[0].labelUsable).toBe(true);
+});

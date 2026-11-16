@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Sitr contributors
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { transform } from 'esbuild';
+import { build } from 'esbuild';
 import { readFile } from 'node:fs/promises';
 
 const browser = await chromium.launch({ headless: true });
@@ -11,8 +11,8 @@ try {
   await page.route('http://127.0.0.1/overlay-reuse-fixture', route => route.fulfill({ contentType: 'text/html',
     body: '<style>body{margin:0}img{width:64px;height:64px}</style><img id="photo">' }));
   await page.goto('http://127.0.0.1/overlay-reuse-fixture');
-  const source = (await readFile('src/rendering/overlay.ts', 'utf8')).replace(/^import .*;\r?$/gm, '');
-  await page.addScriptTag({ content: (await transform(source, { loader: 'ts', format: 'iife', globalName: 'OverlayModule' })).code });
+  const bundle=await build({entryPoints:['src/rendering/overlay.ts'],bundle:true,write:false,format:'iife',globalName:'OverlayModule',platform:'browser'});
+  await page.addScriptTag({content:bundle.outputFiles[0].text});
   const result = await page.evaluate(async () => {
     const image = document.getElementById('photo');
     image.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="red"/></svg>');

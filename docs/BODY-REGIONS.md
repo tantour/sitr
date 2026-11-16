@@ -6,7 +6,7 @@ offers the same choices for keyboard users. Face has Show, Black, Blur and
 Pixelate; hair and exposed body-skin areas have Show or Hide. Blur and Pixelate
 show their strength directly below the actions, independently for each gender.
 
-To hide only male thighs: enable **Advanced segmentation**, select **Male → Show all**, click either thigh, then
+To hide only male thighs: enable **Choose body areas**, select **Male → Show all**, click either thigh, then
 choose **Hide**. Hair, face, neck, torso, arms, hands, lower legs and feet remain
 shown. **Show all** also shows unrecognized skin. Female choices are independent.
 **Groin (pelvis)** is a separate area on the diagram and in the area menu. To
@@ -16,7 +16,7 @@ previous torso action, including Show all; either can then be changed independen
 There is no global Female/Male/Everyone/No one selector. Videos have separate
 Show/Black/Blur/Pixelate choices for each gender and cover the whole person.
 
-The visible **Advanced segmentation** checkbox above the gender tabs switches area detection
+The visible **Choose body areas** checkbox above the gender tabs switches area detection
 on or off. When on, its adjacent quality selector offers **Fast** (stride 16) and
 **Quality** (stride 8, slower with finer detail); the segmented diagram controls individual areas.
 When off, one continuous body-skin shape replaces those segments. Show all /
@@ -29,7 +29,7 @@ areas, including face and hair. Neither mode changes video choices.
 MediaPipe still detects skin/hair/face; BodyPix labels anatomy at body-skin
 pixels. Its original hip/shoulder landmarks predict the groin through clothing,
 while hip-to-knee segments repair upper thighs mislabelled as torso or lower legs.
-The pelvis follows bent/crossed legs and ends above the learned knees. Instance
+The pelvis uses a full-width, shallow band anchored to the hips and an agreeing dense torso/leg junction. Its downward reach is capped by 18% of torso height, 30% of pelvis width, and (when available) 30% of the shorter hip-to-knee segment. A stable instance-mask leg split can shorten it further. The old band that extended toward the knees is removed. Instance
 masks isolate each person's evidence; ambiguous overlaps and uncertain landmarks
 are rejected. The anatomy map also labels clothing for part-area measurements; ordinary Hide
 still covers skin only. Chest and belly split the torso halfway along each person’s
@@ -57,20 +57,9 @@ keeps face effects separate. Body-area actions return coverage to Chosen areas;
 face and hair choices preserve the current mode. Old global skin-exposure rules
 remain disabled.
 
-For a conditional rule, enable Advanced segmentation, select a part, then use
-**Part threshold · images only**. Choose **Hide entire part** or **Hide entire body**
-and enter **Skin above (%)**, for example 50. Each gender and part saves its own
-rule. The fraction is exposed body skin divided by all confidently owned pixels
-of that estimated part, including clothing. Exactly 50% does not trigger a 50% rule.
-Rules add black coverage to existing choices. For coverage only above the threshold,
-choose **Show** for the part first. A part rule includes clothing in that part; a
-body rule covers the entire owned silhouette. **Face when body threshold triggers**
-chooses Black (default) or Show. Show opens the semantic face and uniquely associated
-face box after expansion and temporarily overrides the normal face effect. If
-multiple body rules trigger, Black wins. Off removes the selected rule; Show all / Hide all
-or turning segmentation off clears the affected rules. Uncertain people or missing
-maps do not trigger thresholds. Small parts need at least four owned pixels.
-These are estimates of visible parts, not hidden anatomy or clinical skin measurements.
+For conditional coverage, open **Custom rules** below the image and video editors, choose the gender under **Rules for**, and add a rule. Each condition can measure one area or a combined area; multiple conditions support AND/OR. Choose skin-only, entire-area or whole-body coverage with black or smart clothing. The old separate part-threshold controls are removed. Saved thresholds still appear in Custom rules and can be edited there.
+
+Skin percentages use confidently owned visible anatomy including clothing. A strictly-above 50% rule does not trigger at exactly 50%. Rules add coverage to ordinary choices; choose Show for conditional-only coverage. Missing anatomy cannot satisfy percentage conditions. Whole-body rules offer a separate face choice. Hair remains black when covered. See the [custom rule guide](USER_GUIDE.md) for comparison operators, combined percentages and body-relative expansion.
 
 Existing choices are migrated when opening the new editor. Old all-body-area
 exemptions also migrate hair and neck to Show. Policy settings use

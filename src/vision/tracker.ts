@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Sitr contributors
-import { ENGINE, type Label } from '../config/settings';
+import type { Label } from '../config/settings';
 import type { PersonDetection, Rect, Track } from '../state/contracts';
 import { appearanceSimilarity } from './appearance';
 
@@ -16,6 +16,9 @@ function predicted(track: Track, at: number): Rect {
   return { ...track.box, x: track.box.x + track.velocityX * dt, y: track.box.y + track.velocityY * dt };
 }
 
+// Keep identity through brief occlusions; never return stale masks as detections.
+const VIDEO_IDENTITY_RETENTION_MS = 6000;
+const MAX_RETAINED_TRACKS = 60;
 /** Two-stage ByteTrack-style detection association. Labels are invalidated on doubtful motion. */
 export class ByteTracker {
   private tracks = new Map<string, Track>();
@@ -26,7 +29,7 @@ export class ByteTracker {
     includeLowConfidenceStatic = false): Track[] {
     const high = detections.filter(d => d.score >= 0.25);
     const low = detections.filter(d => d.score >= 0.1 && d.score < 0.25);
-    const existing = [...this.tracks.values()].filter(t => now - t.lastSeen <= ENGINE.lostTrackMs);
+    const existing = [...this.tracks.values()].filter(t => now - t.lastSeen <= VIDEO_IDENTITY_RETENTION_MS);
     const matchedTracks = new Set<string>();
     const matchedDetections = new Set<PersonDetection>();
     const matchStage = (candidates: PersonDetection[], threshold: number, allowLost: boolean, poseRecovery = false) => {
@@ -43,7 +46,9 @@ export class ByteTracker {
         const appearance = appearanceSimilarity(track.appearance, detection.appearance);
         // A cut can replace someone at exactly the same coordinates. Position
         // alone must not carry their labels onto a clearly different appearance.
-        if (!isStatic && track.appearance && detection.appearance && appearance < 0.55) continue;
+        const continuousTurn = alone && motionBoxes?.has(track.id) && track.state === 'active' &&
+          now - track.lastSeen < 500 && matchOverlap >= .7 && appearance >= .35;
+        if (!isStatic && track.appearance && detection.appearance && appearance < 0.55 && !continuousTurn) continue;
         if (track.state === 'lost' && now - track.lastSeen > 400 &&
             (!track.appearance || !detection.appearance || appearance < 0.6)) continue;
         if (poseRecovery) {
@@ -85,6 +90,7 @@ export class ByteTracker {
           track.labelUsable = false;
           track.state = 'ambiguous';
           track.identityGeneration++;
+          track.pendingGenderLabel = undefined; track.pendingGenderVotes = undefined;
           track.lastGenderCheckAt = undefined;
           if ((rival || proposal.appearance < 0.55) && track.labelSource === 'automatic') {
             track.label = 'unknown';
@@ -138,8 +144,14 @@ export class ByteTracker {
     }
     for (const track of this.tracks.values()) {
       if (matchedTracks.has(track.id) || track.lastSeen === now) continue;
-      if (now - track.lastSeen > ENGINE.lostTrackMs) this.tracks.delete(track.id);
+      if (now - track.lastSeen > VIDEO_IDENTITY_RETENTION_MS) this.tracks.delete(track.id);
       else { track.state = 'lost'; }
+    }
+    // Extended re-identification must not grow memory unbounded on rapid cuts.
+    if (this.tracks.size > MAX_RETAINED_TRACKS) for (const old of [...this.tracks.values()]
+      .filter(track => track.lastSeen !== now).sort((a, b) => a.lastSeen - b.lastSeen)) {
+      this.tracks.delete(old.id);
+      if (this.tracks.size <= MAX_RETAINED_TRACKS) break;
     }
     return [...this.tracks.values()].filter(t => t.lastSeen === now);
   }
@@ -153,6 +165,7 @@ export class ByteTracker {
     track.genderConfidence = track.labelUsable ? 1 : 0;
     track.genderEvidence = 0;
     track.genderModelSource = undefined;
+    track.pendingGenderLabel = undefined; track.pendingGenderVotes = undefined;
     track.lastGenderCheckAt = undefined;
     return true;
   }
@@ -162,9 +175,19 @@ export class ByteTracker {
     const track = this.tracks.get(id);
     if (!track || track.state === 'lost' || track.state === 'ambiguous' || track.labelSource === 'user' || confidence < minimumConfidence) return false;
     const vote = label === 'male' ? 1 : -1;
+    // A turned/profile face may produce one strong wrong vote. Retain an
+    // established continuous identity until a second contrary observation.
+    if (!isStatic && track.labelUsable && track.labelSource === 'automatic' &&
+        track.genderModelSource === source && track.label !== label) {
+      track.pendingGenderVotes = track.pendingGenderLabel === label ? (track.pendingGenderVotes ?? 0) + 1 : 1;
+      track.pendingGenderLabel = label;
+      if (track.pendingGenderVotes < 2) return false;
+      track.genderEvidence = vote;
+    }
+    track.pendingGenderLabel = undefined; track.pendingGenderVotes = undefined;
     // Do not spend several seconds unwinding saturated evidence after a cut.
-    // Opposite evidence invalidates the old video label immediately; a second
-    // matching sample confirms the replacement. Face votes supersede body votes.
+    // A confirmed contrary pair replaces saturated evidence immediately.
+    // A change of model source still requires fresh evidence from that source.
     if (!isStatic && track.labelSource === 'automatic' &&
         ((track.genderEvidence > 0 && vote < 0) || (track.genderEvidence < 0 && vote > 0) ||
           (track.genderModelSource !== undefined && track.genderModelSource !== source))) track.genderEvidence = 0;

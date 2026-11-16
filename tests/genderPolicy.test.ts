@@ -80,3 +80,11 @@ describe('video classification policy', () => {
     expect(canUseBodyGender(track, 'image', true, false, false)).toBe(false);
   });
 });
+
+it('confirms tentative gender quickly, then backs off stable identity and retries contrary votes quickly',()=>{
+ const {tracker,track}=trackedPerson();track.lastGenderCheckAt=100;
+ tracker.estimateGender(track.id,'female',.9,false);expect(nextVideoGenderCheck([track])).toBe(300);
+ tracker.estimateGender(track.id,'female',.9,false);expect(nextVideoGenderCheck([track])).toBe(4100);
+ tracker.estimateGender(track.id,'male',.99,false);expect(nextVideoGenderCheck([track])).toBe(300);
+ expect(track.labelUsable).toBe(true);
+});

@@ -87,7 +87,9 @@ export class BackgroundImages {
     record.applied = undefined;
   }
   private write(record: Background): void {
-    if (!this.enabled()) { this.restore(record); return; }
+    if (!this.enabled() || [...record.slots.values()].every(slot=>!slot.active)) {
+      this.restore(record);delete record.element.dataset.localMediaCensorBackground;return;
+    }
     const values = record.layers.map((value, index) => {
       const slot = record.slots.get(index);
       return !slot?.active ? value : slot.output ? `url("${slot.output}")` : 'linear-gradient(#000, #000)';
@@ -156,7 +158,7 @@ export class BackgroundImages {
                   slot.output = undefined;
                   this.edit(() => this.write(owner));
                 },
-                release: () => { slot.active = false; this.edit(() => this.write(owner)); },
+                release: () => { slot.generation++;slot.active = false;if(slot.output)URL.revokeObjectURL(slot.output);slot.output=undefined;this.edit(() => this.write(owner)); },
                 accept: result => {
                   const generation = ++slot.generation;
                   if (!slot.blob) return;

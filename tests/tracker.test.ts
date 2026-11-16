@@ -99,18 +99,19 @@ describe('temporary track labels', () => {
     expect(tracker.estimateGender(first.id, 'female', 0.98, false)).toBe(true);
     expect(tracker.estimateGender(first.id, 'male', 0.98, false)).toBe(false);
     expect(first.label).toBe('female');
-    expect(tracker.update([detection(0.1)], 100)[0].labelUsable).toBe(false);
+    expect(tracker.update([detection(0.1)], 100)[0].labelUsable).toBe(true);
     expect(tracker.estimateGender(first.id, 'male', 0.98, false)).toBe(true);
     expect(first.label).toBe('male');
   });
-  it('invalidates saturated evidence on the first opposite video estimate', () => {
+  it('holds saturated identity through one contrary vote and changes on confirmation', () => {
     const tracker = new ByteTracker('saturated');
     const first = tracker.update([detection(0.1)], 0, true)[0];
     for (let i = 0; i < 10; i++) tracker.estimateGender(first.id, 'female', 0.98, false);
     expect(first.genderEvidence).toBe(-6);
     expect(tracker.estimateGender(first.id, 'male', 0.98, false)).toBe(false);
-    expect(first.genderEvidence).toBe(1);
-    expect(tracker.update([detection(0.1)], 100)[0].labelUsable).toBe(false);
+    expect(first.genderEvidence).toBe(-6);
+    expect(first.pendingGenderVotes).toBe(1);
+    expect(tracker.update([detection(0.1)], 100)[0].labelUsable).toBe(true);
     expect(tracker.estimateGender(first.id, 'male', 0.98, false)).toBe(true);
   });
   it('does not transfer classification or its cadence to a different appearance in the same box', () => {
@@ -216,4 +217,35 @@ describe('temporary track labels', () => {
     expect(replacement.id).not.toBe(standing.id);
     expect(replacement.labelUsable).toBe(false);
   });
+});
+
+it('retains a front-facing identity through a motion-anchored turn with changed torso appearance', () => {
+ const front=new Float32Array([1,0,0,0,1,0,0,0,1,0,0,0]);
+ const back=new Float32Array([.4,.6,0,0,.4,.6,0,0,.4,.6,0,0]);
+ const tracker=new ByteTracker('front-back');
+ const first=tracker.update([{...detection(.1),appearance:front}],0,true)[0];
+ tracker.estimateGender(first.id,'female',.99,true);
+ const turned=tracker.update([{...detection(.12),appearance:back}],100,false,new Map([[first.id,detection(.12).box]]))[0];
+ expect(turned.id).toBe(first.id);expect(turned.labelUsable).toBe(true);expect(turned.label).toBe('female');
+});
+it('a matching appearance can return after a three-second occlusion, but an expired track cannot', () => {
+ const appearance=new Float32Array([1,0,0,0,1,0,0,0,1,0,0,0]);
+ const tracker=new ByteTracker('occlusion');const d={...detection(.1),appearance};
+ const first=tracker.update([d],0,true)[0];tracker.estimateGender(first.id,'female',.99,true);
+ tracker.update([],100);const found=tracker.update([d],3000)[0];expect(found.id).toBe(first.id);expect(found.labelUsable).toBe(true);
+ tracker.update([],10000);expect(tracker.update([d],10100)[0].id).not.toBe(first.id);
+});
+it('one erroneous profile vote cannot clear a confirmed label and an agreeing vote cancels it', () => {
+ const tracker=new ByteTracker('profile-vote');const first=tracker.update([detection(.1)],0,true)[0];
+ tracker.estimateGender(first.id,'female',.99,true);tracker.estimateGender(first.id,'male',.96,false);
+ expect(first.label).toBe('female');expect(first.labelUsable).toBe(true);
+ tracker.estimateGender(first.id,'female',.99,false);expect(first.pendingGenderLabel).toBeUndefined();
+ tracker.estimateGender(first.id,'male',.96,false);expect(first.label).toBe('female');expect(first.labelUsable).toBe(true);
+});
+it('bounds retained masks during rapid identity churn without removing current detections',()=>{
+ const tracker=new ByteTracker('churn');
+ for(let i=0;i<150;i++){
+  const current=tracker.update([detection(i*2)],i);
+  expect(current).toHaveLength(1);expect(tracker.get().length).toBeLessThanOrEqual(60);
+ }
 });

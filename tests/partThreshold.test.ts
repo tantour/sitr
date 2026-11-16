@@ -66,7 +66,7 @@ describe('per-part skin thresholds', () => {
       { area: 'chest', percent: NaN, target: 'part' },
     ] } } });
     expect(settings.personPolicies!.male.skin.chest).toBe('show'); expect(settings.personPolicies!.male.skin.belly).toBe('show');
-    expect(settings.personPolicies!.male.partThresholds).toEqual([{ area: 'belly', percent: 100, target: 'body', face: 'black' }]);
+    expect(settings.personPolicies!.male.partThresholds).toEqual([{ area: 'belly', percent: 100, target: 'body', face: 'black',enabled:true,condition:'above',effect:'black' }]);
   });
   it('opens shown faces after expansion while leaving black faces covered', () => {
     for (const face of ['show', 'black'] as const) {
@@ -123,4 +123,47 @@ describe('orientation-aware chest/belly halves', () => {
     const person = { mask: new Float32Array(9).fill(.95), maskWidth: 3, maskHeight: 3 };
     expect(torsoAxes(new Uint8Array(9).fill(13), 3, [person, person], [])).toEqual([undefined, undefined]);
   });
+});
+
+it('combines chest and belly with a weighted union denominator',()=>{
+ const f=fixture(51);f.settings.personPolicies!.male.partThresholds=[{area:'chest',areas:['chest','belly','chest'],percent:20,target:'part',effect:'smart'}];
+ expect(partThresholdMask(f.composition.observations,f.settings,f.regions)!.some(Boolean)).toBe(false);
+ f.settings.personPolicies!.male.partThresholds[0].percent=10;
+ const result=partThresholdCoverage(f.composition.observations,f.settings,f.regions,f.side)!;
+ expect(result.smartMask.filter(Boolean)).toHaveLength(400);expect(result.blackMask.some(Boolean)).toBe(false);
+});
+it('any skin can force black on skin only, independently of fabric fill',()=>{
+ const f=fixture(1);f.settings.fabricFill=true;f.settings.personPolicies!.male.partThresholds=[{area:'chest',areas:['chest'],condition:'any',percent:100,target:'skin',effect:'black'}];
+ const result=partThresholdCoverage(f.composition.observations,f.settings,f.regions,f.side)!;
+ expect(result.blackMask.filter(Boolean)).toHaveLength(1);expect(result.smartMask.some(Boolean)).toBe(false);
+ f.settings.personPolicies!.male.partThresholds[0].enabled=false;
+ expect(partThresholdMask(f.composition.observations,f.settings,f.regions)!.some(Boolean)).toBe(false);
+});
+it('overlapping black and smart rules retain black coverage and stay per person',()=>{
+ const f=fixture(51);f.settings.personPolicies!.male.partThresholds=[{area:'chest',percent:0,target:'part',effect:'smart'},{area:'chest',percent:0,target:'skin',effect:'black'}];
+ const result=partThresholdCoverage(f.composition.observations,f.settings,f.regions,f.side)!;
+ expect(result.smartMask.filter(Boolean)).toHaveLength(100);expect(result.blackMask.filter(Boolean)).toHaveLength(51);
+ f.composition.observations[0].ownedMask.fill(0,0,51);
+ expect(partThresholdCoverage(f.composition.observations,f.settings,f.regions,f.side)!.mask.some(Boolean)).toBe(false);
+});
+
+it('whole-body smart clothing respects an explicitly black face',()=>{
+ const f=fixture(51,'body');f.settings.personPolicies!.male.partThresholds![0].effect='smart';
+ const person=f.composition.observations[0];person.faceSkinMask[300]=255;
+ const coverage=partThresholdCoverage([person],f.settings,f.regions,f.side)!;
+ expect(coverage.smartMask[250]).toBe(255);expect(coverage.blackMask[300]).toBe(255);expect(coverage.blackMask[250]).toBe(0);
+});
+
+it('matches independent conditions with AND/OR and allows a separate coverage area',()=>{
+ const f=fixture(51),policy=f.settings.personPolicies!.male;
+ policy.partThresholds=[{area:'chest',percent:0,target:'part',conditions:[{areas:['chest'],operator:'above',percent:50},{areas:['belly'],operator:'above',percent:0}],match:'all'}];
+ const check=()=>partThresholdCoverage(f.composition.observations,f.settings,f.regions,f.side)!.mask.filter(Boolean).length;
+ expect(check()).toBe(0);policy.partThresholds[0].match='any';expect(check()).toBe(400);
+ policy.partThresholds[0].match='all';f.composition.observations[0].bodySkinMask[100]=255;expect(check()).toBe(400);
+ policy.partThresholds[0].coverAreas=['hands'];f.regions[399]=4;expect(check()).toBe(1);
+});
+it('never joins one persons chest condition to another persons belly condition',()=>{
+ const f=fixture(51),one=f.composition.observations[0],two=structuredClone(one);two.id='two';two.bodySkinMask.fill(0);two.bodySkinMask[100]=255;
+ f.settings.personPolicies!.male.partThresholds=[{area:'chest',percent:0,target:'body',conditions:[{areas:['chest'],operator:'above',percent:50},{areas:['belly'],operator:'any',percent:0}],match:'all'}];
+ expect(partThresholdCoverage([one,two],f.settings,f.regions,f.side)!.mask.some(Boolean)).toBe(false);
 });

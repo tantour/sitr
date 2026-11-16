@@ -6,7 +6,7 @@ import { root } from './models.mjs';
 
 export async function dependencyNotices() {
   const packages = ['@mediapipe/tasks-vision', 'onnxruntime-web', 'onnxruntime-common', 'flatbuffers',
-    'long', 'platform', 'protobufjs', 'fflate'];
+    'long', 'platform', 'protobufjs', 'fflate', 'pdfjs-dist'];
   for (const name of await readdir(resolve(root, 'node_modules/@protobufjs'))) packages.push(`@protobufjs/${name}`);
   const fallback = { '@mediapipe/tasks-vision': 'Apache-2.0.txt', 'onnxruntime-web': 'ONNX-Runtime-MIT.txt',
     'onnxruntime-common': 'ONNX-Runtime-MIT.txt' };

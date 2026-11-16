@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {personExpansion} from './expansion';
 // Copyright (C) 2026 Sitr contributors
 import type { Settings } from '../config/settings';
 import type { Track, TrackObservation } from '../state/contracts';
@@ -12,7 +13,7 @@ import { partThresholdCoverage } from './partThreshold';
 export function regionCoverage(composition: Composition, tracks: Track[], settings: Settings,
   side: number, regions?: Uint8Array,
   threshold = partThresholdCoverage(composition.observations, settings, regions, side)?.mask): Uint8Array {
-  const core = composition.unassignedMask.slice(), visible = new Uint8Array(side * side);
+  const core = pruneIslands(composition.unassignedMask,side,side), expanded = core.slice(), visible = new Uint8Array(side * side);
   const exempt = new Uint8Array(side * side);
   composition.observations.forEach((person: TrackObservation, index) => {
     const policy = policyFor(settings, person);
@@ -20,6 +21,9 @@ export function regionCoverage(composition: Composition, tracks: Track[], settin
     const covered = hasImageCoverage(policy);
     if (selected) {
       const hidden = selectedMask(person, settings, regions);
+      const radius=personExpansion(settings.imageExpansion,side,person.box);
+      const margin=dilate(pruneIslands(hidden,side,side),side,side,radius);
+      for(let p=0;p<expanded.length;p++)if(margin[p])expanded[p]=255;
       for (let p = 0; p < core.length; p++) if (hidden[p] || composition.ambiguousByTrack[index][p] || composition.uncertainByTrack[index][p]) core[p] = 255;
     }
     if (!covered || !selected) {
@@ -29,8 +33,8 @@ export function regionCoverage(composition: Composition, tracks: Track[], settin
       !selected || !covered || person.bodySkinMask[p] && !skinHidden(policy, regions?.[p], !!regions)
       || person.hairMask[p] && policy.hair === 'show' || person.faceSkinMask[p])) visible[p] = 255;
   });
-  const expanded = dilate(pruneIslands(core, side, side), side, side, settings.imageExpansion);
-  const exemptEdge = dilate(exempt, side, side, settings.imageExpansion + 2);
+  for(let p=0;p<expanded.length;p++)if(core[p])expanded[p]=255;
+  const exemptEdge = exempt;
   for (let p = 0; p < expanded.length; p++) if (!core[p] && (visible[p] || exemptEdge[p])) expanded[p] = 0;
   if (threshold) {
     for (let p = 0; p < expanded.length; p++) if (threshold[p]) expanded[p] = 255;

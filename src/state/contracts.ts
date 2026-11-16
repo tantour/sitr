@@ -7,6 +7,8 @@ export interface Rect { x: number; y: number; width: number; height: number }
 export interface FramePacket {
   key: FrameKey;
   kind: 'image' | 'video';
+  nativeWidth?:number;
+  nativeHeight?:number;
   mediaTimeSec?: number;
   paused?: boolean;
   motionTracks?: Array<{ id: string; box: Rect }>;
@@ -43,6 +45,8 @@ export interface Track {
   labelSource: 'none' | 'automatic' | 'user';
   genderConfidence: number;
   genderEvidence: number;
+  pendingGenderLabel?: 'male' | 'female';
+  pendingGenderVotes?: number;
   genderModelSource?: 'face' | 'body-intel' | 'body-paddle';
   lastGenderCheckAt?: number;
   identityGeneration: number;
@@ -80,6 +84,9 @@ export interface TrackObservation {
   state: Track['state'];
 }
 export interface AnalysisResult {
+  fabricFill?: boolean;
+  thumbnailFallbacks?:number;
+  clothingRgb?: Uint8ClampedArray;
   key: FrameKey;
   width: number;
   height: number;
@@ -96,7 +103,8 @@ export interface AnalysisResult {
   staticMask?: Uint8Array;
   /** Forced black coverage, rendered after all optional blur/face effects. */
   blackMask?: Uint8Array;
-  trackMasks?: Array<{ id: string; alpha: Uint8Array; effect?: AnalysisResult['effect'] }>;
+  smartCoverMask?:Uint8Array;
+  trackMasks?: Array<{ id: string; alpha: Uint8Array; blackAlpha?:Uint8Array; fabricColor?: [number, number, number]; fabricLight?: [number,number,number,number]; fabricBox?: Rect; effect?: AnalysisResult['effect'] }>;
   effect?: { kind: WholeBodyEffect; intensity: number; grayscale: boolean };
   faceMask?: Uint8Array;
   faceEffect?: { kind: WholeBodyEffect; intensity: number; grayscale: boolean };
@@ -118,7 +126,7 @@ export interface AnalysisResult {
     genderPreprocess?: number; genderRun?: number; genderDecode?: number;
     total: number; backend: string; faceBackend?: string; genderBackend?: string; semanticBackend: string; semanticDevice?: string;
     yoloSize?: number; yunetSize?: number; faceCaptureSize?: number;
-    onnxThreads?: number; semanticParallel?: boolean; isolated: boolean };
+    onnxThreads?: number; semanticParallel?: boolean; personCadence?: string; isolated: boolean };
 }
 export type WarmupProgress = { completed: number; total: number };
 export type EngineStatus = { ok: boolean; ready: boolean; error?: string;

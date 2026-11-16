@@ -1,0 +1,2 @@
+import {it,expect,vi} from 'vitest';import {uniqueId} from '../src/state/id';
+it('produces valid collision-resistant IDs when HTTP has no randomUUID',()=>{let counter=0;vi.stubGlobal('crypto',{getRandomValues:(bytes:Uint8Array)=>{bytes.fill(0);bytes[0]=++counter;return bytes;}});try{const a=uniqueId(),b=uniqueId();expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);expect(a).not.toBe(b);}finally{vi.unstubAllGlobals();}});

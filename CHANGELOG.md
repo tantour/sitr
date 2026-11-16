@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0 - November 16, 2026
+
+- Add smart clothing fill, smoother hair masks, combined custom rules, and body-relative expansion.
+- Add GIF/WebP playback protection and an optimized PDF reader with editable image boxes and reading-ahead caching.
+- Improve motion tracking, dynamic image processing, tab resume, and settings usability.
+- See [0.6.0 release notes](docs/RELEASE-NOTES-0.6.0.md) for installation and limitations.
+
+
 ## 0.5.2 — October 20, 2026
 
 - Add per-gender, per-part image skin thresholds that cover the entire part or body, with Black/Show face choices for whole-body rules. Measure skin against the visible clothed part area and preserve existing Show/Hide actions.

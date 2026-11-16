@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {initializeRulesEditor} from './rulesEditor';
 // Copyright (C) 2026 Sitr contributors
 import { BODY_REGIONS, type FaceEffect, type PersonArea, type Settings } from '../config/settings';
 import { editablePolicies, faceStrength, genderPolicy, groupedBodySkin, uniformPolicy } from '../config/personPolicy';
@@ -12,6 +13,7 @@ export function initializePersonEditor(getSettings: () => Settings,
   save: (patch: Partial<Settings>, control: HTMLButtonElement | HTMLSelectElement | HTMLInputElement) => Promise<boolean>): { refresh: () => void } {
   let gender: 'female' | 'male' = 'female', area: PersonArea = 'body';
   const root = document.getElementById('personEditor')!;
+  const rulesEditor=initializeRulesEditor(getSettings,save,()=>gender,AREA_NAMES,value=>selectGender(value));
   const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-person-gender]'));
   const regions = Array.from(root.querySelectorAll<SVGElement>('[data-person-area]'));
   const actions = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-person-action]'));
@@ -19,26 +21,16 @@ export function initializePersonEditor(getSettings: () => Settings,
   const model = document.getElementById('imageBodyRegionMode') as HTMLSelectElement;
   const toggle = document.getElementById('bodyPixEnabled') as HTMLInputElement;
   const strength = document.getElementById('imageFaceEffectIntensity') as HTMLInputElement;
-  const thresholdTarget = document.getElementById('partThresholdTarget') as HTMLSelectElement;
-  const thresholdPercent = document.getElementById('partThresholdPercent') as HTMLInputElement;
-  const thresholdFace = document.getElementById('partThresholdFace') as HTMLSelectElement;
   const available = (part: PersonArea, enabled: boolean) => part === 'hair' || part === 'face' || (enabled ? part !== 'body' : part === 'body');
   const refresh = () => {
     if (!getSettings()) return;
     const policy = genderPolicy(getSettings(), gender);
     const enabled = getSettings().imageBodyRegionMode !== 'off';
     if (!available(area, enabled)) area = enabled ? 'chest' : 'body';
-    document.getElementById('partThresholdControls')!.hidden = !enabled || !BODY_REGIONS.includes(area as typeof BODY_REGIONS[number]);
-    const rule = policy.partThresholds?.find(rule => rule.area === area);
-    thresholdTarget.value = rule?.target ?? 'off';
-    thresholdPercent.value = String(rule?.percent ?? 50);
-    document.getElementById('partThresholdPercentControl')!.hidden = !rule;
-    document.getElementById('partThresholdFaceControl')!.hidden = rule?.target !== 'body';
-    thresholdFace.value = rule?.face ?? 'black';
     toggle.checked = enabled;
     model.hidden = !enabled;
     root.dataset.bodypix = enabled ? 'on' : 'off';
-    document.getElementById('bodyPixModeHelp')!.textContent = t(enabled ? getSettings().imageBodyRegionMode === 'finer' ? 'Images only · slower, finer detail' : 'Images only · slower processing' : 'Off · body skin together');
+    document.getElementById('bodyPixModeHelp')!.textContent = t(enabled ? getSettings().imageBodyRegionMode === 'finer' ? 'More detail · slower' : 'Separate choices for each body area' : 'Body skin is covered together');
     document.getElementById('imageFaceEffectOptions')!.hidden = area !== 'face' || !['blur', 'checkerboard'].includes(policy.face);
     strength.value = String(faceStrength(getSettings(), policy));
     document.getElementById('imageFaceEffectIntensityValue')!.textContent = number(Number(strength.value));
@@ -76,6 +68,7 @@ export function initializePersonEditor(getSettings: () => Settings,
       : area === 'chest' || area === 'belly' ? 'Chest and belly are approximate halves along the body, following its orientation.'
       : area === 'groin' ? 'Only exposed skin is affected. The pelvis boundary is estimated from torso and legs.'
       : 'Only exposed skin in this area is affected. Clothes stay visible.');
+    rulesEditor.refresh();
     model.value = getSettings().imageBodyRegionMode;
     for (const action of ['show', 'hide']) document.getElementById(action === 'show' ? 'showAllAreas' : 'hideAllAreas')!.setAttribute('aria-pressed', String(!enabled && value('body') === action));
   };
@@ -92,21 +85,6 @@ export function initializePersonEditor(getSettings: () => Settings,
     region.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectArea(region.dataset.personArea as PersonArea); } };
   });
   picker.onchange = () => selectArea(picker.value as PersonArea);
-  const saveThreshold = async (control: HTMLSelectElement | HTMLInputElement) => {
-    if (!BODY_REGIONS.includes(area as typeof BODY_REGIONS[number])) return;
-    if (thresholdTarget.value !== 'off' && (!thresholdPercent.checkValidity() || !Number.isFinite(thresholdPercent.valueAsNumber))) {
-      thresholdPercent.reportValidity(); return;
-    }
-    const policies = editablePolicies(getSettings()), policy = policies[gender];
-    policy.partThresholds = (policy.partThresholds ?? []).filter(rule => rule.area !== area);
-    if (thresholdTarget.value !== 'off') policy.partThresholds.push({ area: area as typeof BODY_REGIONS[number],
-      percent: thresholdPercent.valueAsNumber, target: thresholdTarget.value as 'part' | 'body',
-      ...(thresholdTarget.value === 'body' ? { face: thresholdFace.value as 'show' | 'black' } : {}) });
-    await save({ personPolicies: policies, imageCoverage: 'regions' }, control); refresh();
-  };
-  thresholdTarget.onchange = () => { void saveThreshold(thresholdTarget); };
-  thresholdPercent.onchange = () => { void saveThreshold(thresholdPercent); };
-  thresholdFace.onchange = () => { void saveThreshold(thresholdFace); };
   strength.oninput = () => { document.getElementById('imageFaceEffectIntensityValue')!.textContent = number(Number(strength.value)); };
   strength.onchange = async () => {
     const policies = editablePolicies(getSettings()); policies[gender].faceStrength = Number(strength.value);

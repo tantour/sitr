@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Sitr contributors
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { transform } from 'esbuild';
+import { build } from 'esbuild';
 import { readFile } from 'node:fs/promises';
 
 const browser = await chromium.launch({ headless: true });
@@ -16,9 +16,8 @@ try {
     ['src/rendering/overlay.ts', 'OverlayModule', ''],
     ['src/rendering/background.ts', 'Background', 'const decodeImageBlob = Capture.decodeImageBlob;\n'],
   ]) {
-    const source = prefix + (await readFile(path, 'utf8')).replace(/^import .*;\r?$/gm, '');
-    const compiled = await transform(source, { loader: 'ts', format: 'iife', globalName: name });
-    await page.addScriptTag({ content: compiled.code });
+    const bundle=await build({entryPoints:[path],bundle:true,write:false,format:'iife',globalName:name,platform:'browser'});
+    await page.addScriptTag({content:bundle.outputFiles[0].text});
   }
   const pixels = await page.evaluate(async () => {
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#e74b21"/></svg>';

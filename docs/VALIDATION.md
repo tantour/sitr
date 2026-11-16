@@ -1,3 +1,7 @@
+# Current release
+
+See [Sitr 0.6.0 validation](RELEASE-VALIDATION-0.6.0.md). The results below describe the historical 0.5.2 release.
+
 # Sitr 0.5.2 release validation
 
 Prepared locally on Windows on October 20, 2026, with Node.js 22.21.0,

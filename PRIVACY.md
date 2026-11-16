@@ -1,6 +1,6 @@
 # Sitr privacy policy
 
-Effective date: October 20, 2026. Applies to the unpacked Sitr 0.5.2 extension.
+Effective date: November 16, 2026. Applies to the unpacked Sitr 0.6.0 extension.
 
 ## Processing and storage
 
@@ -51,3 +51,5 @@ can prevent Sitr from operating on that site or its embedded frames.
 Use the repository's Issues page for general questions. Use the private reporting
 procedure in [SECURITY.md](SECURITY.md) for vulnerabilities. Do not include private
 media, cookies, authentication tokens, or sensitive browsing URLs in public posts.
+
+PDF documents are decoded locally. Opening a network PDF fetches it from its source website; local PDFs are not uploaded. Visible pages and the next three pages are processed, while the previous two pages remain cached for scrolling. Downloaded document bytes, rendered pages, masks, and manual picture-box corrections stay in session memory. The reader does not save manual box corrections across document reloads.

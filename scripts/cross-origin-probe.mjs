@@ -13,7 +13,7 @@ const imageServer = createServer((request, response) => {
     const visits = (requests.get(request.url) ?? 0) + 1;
     requests.set(request.url, visits);
     if (request.url.includes('hang') && visits > 1) return;
-    response.writeHead(200, { 'content-type': 'image/jpeg', 'cache-control': 'no-store',
+    response.writeHead(200, { 'content-type': request.url.includes('untyped')?'application/octet-stream':'image/jpeg', 'cache-control': 'no-store',
       ...(request.url.includes('cors') ? { 'access-control-allow-origin': '*' } : {}) });
     response.end(photo);
   } else { response.writeHead(404); response.end(); }
@@ -21,7 +21,7 @@ const imageServer = createServer((request, response) => {
 await new Promise(done => imageServer.listen(0, '127.0.0.1', done));
 const pageServer = createServer((_request, response) => {
   response.writeHead(200, { 'content-type': 'text/html' });
-  response.end(`<!doctype html><img id="hang1" width="320" height="210" src="http://127.0.0.1:${imageServer.address().port}/photo-hang1.jpg"><img id="hang2" width="320" height="210" src="http://127.0.0.1:${imageServer.address().port}/photo-hang2.jpg"><img id="cors" width="320" height="210" src="http://127.0.0.1:${imageServer.address().port}/photo-cors.jpg"><img id="cross" width="320" height="210" src="http://127.0.0.1:${imageServer.address().port}/photo.jpg">`);
+  response.end(`<!doctype html><img id="hang1" width="320" height="210" src="http://127.0.0.1:${imageServer.address().port}/photo-hang1.jpg"><img id="hang2" width="320" height="210" src="http://127.0.0.1:${imageServer.address().port}/photo-hang2.jpg"><img id="cors" width="320" height="210" src="http://127.0.0.1:${imageServer.address().port}/photo-cors.jpg"><img id="cross" width="320" height="210" src="http://127.0.0.1:${imageServer.address().port}/photo.jpg"><img id="untyped" width="320" height="210" src="http://127.0.0.1:${imageServer.address().port}/photo-untyped.jpg">`);
 });
 await new Promise(done => pageServer.listen(0, '127.0.0.1', done));
 const profile = await mkdtemp(resolve(tmpdir(), 'cross-origin-probe-'));
@@ -32,13 +32,13 @@ try {
   const page = await browser.newPage();
   await page.goto(`http://127.0.0.1:${pageServer.address().port}/`);
   await page.waitForFunction(() => !!document.querySelector('#cross')?.dataset.localMediaCensorSequence &&
-    !!document.querySelector('#cors')?.dataset.localMediaCensorSequence,
+    !!document.querySelector('#cors')?.dataset.localMediaCensorSequence&&!!document.querySelector('#untyped')?.dataset.localMediaCensorSequence,
     undefined, { timeout: 45000 });
   const results = await page.evaluate(() => [...document.images].map(image => ({ id: image.id, status: image.dataset.localMediaCensorStatus,
     pending: image.hasAttribute('data-local-media-censor-pending'), naturalWidth: image.naturalWidth,
     sequence: image.dataset.localMediaCensorSequence, acquire: image.dataset.localMediaCensorAcquireMs })));
   console.log(results);
-  if (results.find(image => image.id === 'cross')?.pending || results.find(image => image.id === 'cors')?.pending) {
+  if (results.find(image => image.id === 'cross')?.pending || results.find(image => image.id === 'cors')?.pending || results.find(image => image.id === 'untyped')?.pending) {
     throw new Error('Responsive cross-origin images remained blocked behind stalled fetches');
   }
 } finally {

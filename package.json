@@ -1,26 +1,40 @@
 {
   "name": "sitr",
   "private": true,
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "Local image and video filtering for Chrome, with English and Arabic controls.",
   "license": "AGPL-3.0-only",
-  "engines": { "node": ">=22.12.0" },
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "vitest run",
+    "test:pdf": "node scripts/pdf-probe.mjs",
     "test:popup": "node scripts/popup-ux-check.mjs",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test && node scripts/check-docs.mjs",
     "models": "node scripts/models.mjs",
     "test:browser": "node scripts/browser-checks.mjs",
+    "test:tab-resume": "node scripts/tab-resume-probe.mjs",
+    "test:reprocess-overlay": "node scripts/reprocess-overlay-probe.mjs",
+    "test:small-images": "node scripts/small-image-probe.mjs",
+    "test:motion": "node scripts/motion-alignment-probe.mjs",
+    "test:hair": "node scripts/hair-smoothing-probe.mjs",
+    "test:rules": "node scripts/advanced-rules-probe.mjs",
+    "test:image-previews": "node scripts/image-preview-probe.mjs",
+    "test:webp": "node scripts/webp-probe.mjs",
+    "test:animation-grid": "node scripts/animation-grid-probe.mjs",
+    "test:gifs": "node scripts/gif-probe.mjs",
     "bench:video": "node scripts/advanced-video-performance-probe.mjs",
     "verify:release": "node scripts/verify-release.mjs",
     "release": "npm run check && npm run build && npm run test:browser && node scripts/package-release.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.0.1",
-    "onnxruntime-web": "1.22.0"
+    "onnxruntime-web": "1.22.0",
+    "pdfjs-dist": "6.5.438"
   },
   "devDependencies": {
     "@types/chrome": "0.0.323",
@@ -28,7 +42,7 @@
     "fflate": "0.8.3",
     "playwright": "^1.63.0",
     "typescript": "5.9.2",
-    "vite": "^7.3.6",
-    "vitest": "^5.0.2"
+    "vite": "^7.3.8",
+    "vitest": "^5.1.0"
   }
 }

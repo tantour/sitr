@@ -88,13 +88,13 @@ describe('model resolution settings', () => {
     expect(normalizeSettings({ yunetSize: 384 }).yunetSize).toBe(320);
     expect(normalizeSettings({ faceCaptureSize: 900 }).faceCaptureSize).toBe(640);
   });
-  it('preserves legacy mask margins and clamps expansion slider settings', () => {
+  it('migrates legacy mask margins once and clamps person-relative settings', () => {
     const legacy = normalizeSettings({ schemaVersion: 8 });
-    expect([legacy.imageExpansion, legacy.videoExpansion]).toEqual([1, 4]);
-    const custom = normalizeSettings({ imageExpansion: 7.6, videoExpansion: 100 });
-    expect([custom.imageExpansion, custom.videoExpansion]).toEqual([8, 24]);
+    expect([legacy.imageExpansion, legacy.videoExpansion]).toEqual([.5, 2]);
+    const custom = normalizeSettings({ expansionUnit:'person', imageExpansion: 7.6, videoExpansion: 100 });
+    expect([custom.imageExpansion, custom.videoExpansion]).toEqual([7.5, 12]);
     expect(normalizeSettings({ imageExpansion: -3, videoExpansion: Number.NaN }).imageExpansion).toBe(0);
-    expect(normalizeSettings({ videoExpansion: Number.NaN }).videoExpansion).toBe(4);
+    expect(normalizeSettings({ videoExpansion: Number.NaN }).videoExpansion).toBe(2);
   });
   it('keeps existing image coverage and black effects by default, and validates effect intensity', () => {
     const legacy = normalizeSettings({ schemaVersion: 9 });

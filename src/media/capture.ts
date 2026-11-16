@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 Sitr contributors
+import {inspectGif} from './gif';
+import {inspectWebP} from './webp';
 const captureContexts = new Map<number, CanvasRenderingContext2D>();
 
 export function captureSquare(source: CanvasImageSource, width: number, height: number, size: number): Uint8Array {
@@ -29,7 +31,8 @@ export function captureSquare(source: CanvasImageSource, width: number, height: 
 export async function sourceIsStatic(blob: Blob): Promise<boolean> {
   const type = blob.type.split(';')[0].trim().toLowerCase();
   if (type === 'image/jpeg') return true;
-  if (type === 'image/gif') return false;
+  if (type === 'image/gif') return (await inspectGif(blob))?.durations.length === 1;
+  if (type === 'image/webp') return (await inspectWebP(blob))?.durations.length === 1;
   if (type === 'image/svg+xml') return svgIsStatic(await blob.text());
   if (type === 'image/png') {
     const bytes = new Uint8Array(await blob.slice(0, Math.min(blob.size, 1_000_000)).arrayBuffer());

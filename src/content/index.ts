@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {verifiedImageBlob} from '../media/imageBlob';
+import {uniqueId} from '../state/id';
 // Copyright (C) 2026 Sitr contributors
+import { AnimatedGifSource } from '../media/gif';
+import {inspectAnimation} from '../media/animatedImage';
+import { GifPlayback } from '../media/gifPlayback';
+import { LatestVideoFrame } from '../media/latestVideoFrame';
 import { DEFAULT_SETTINGS, ENGINE, normalizeSettings, resolveOnnxThreads, resolvePersonSize, resolveYoloSize, siteIsExcepted, type Label, type Settings } from '../config/settings';
 import type { AnalysisResult, FrameKey, FramePacket } from '../state/contracts';
 import { captureSquare, decodeImageBlob, sourceIsStatic } from '../media/capture';
 import { FrameMotion } from '../media/frameMotionClient';
+import {videoMaskNeedsProtection,videoMaskPadding} from '../media/videoMaskFreshness';
 import { Overlay } from '../rendering/overlay';
 import { imageAnalysisKey } from '../config/imageAnalysis';
 import { hasFaceEffects, hasThresholdFaceOpenings } from '../config/personPolicy';
@@ -16,7 +23,7 @@ import { videoHasLiveSource, videoSourceKey } from '../media/videoSource';
 import { VideoWork } from '../media/videoWork';
 
 const tag = 'data-local-media-censor-pending';
-const pendingCss = `img[${tag}],video[${tag}]{filter:brightness(0)!important}`;
+const pendingCss = `img[${tag}],video[${tag}]{filter:brightness(0)!important}img[${tag}][data-local-media-censor-opacity-shield]{opacity:0!important}`;
 
 let settings: Settings = DEFAULT_SETTINGS;
 let topLevelHost: string | undefined;
@@ -27,6 +34,8 @@ let ensuringOffscreen: Promise<void> | undefined;
 let preparingEngine: Promise<void> | undefined;
 let preparingKey = '';
 const controllers = new Set<MediaController>();
+const animatedImages=new WeakSet<HTMLImageElement>();
+const classifiedStaticImages=new WeakSet<HTMLImageElement>();
 const byNode = new WeakMap<HTMLImageElement | HTMLVideoElement, MediaController>();
 const meetingPage = location.hostname.toLowerCase() === 'meet.google.com';
 const meetingVideoWork = new VideoWork<HTMLVideoElement>(ENGINE.maxActiveVideos);
@@ -38,7 +47,7 @@ function protectedSite(): boolean {
   return settings.enabled && !(topLevelHost && siteIsExcepted(topLevelHost, settings.siteExceptions));
 }
 function eligible(node: HTMLImageElement | HTMLVideoElement): boolean {
-  return protectedSite() && (node instanceof HTMLImageElement ? settings.images : settings.videos);
+  return protectedSite() && (node instanceof HTMLImageElement ? animatedImages.has(node) ? settings.videos : settings.images || settings.videos && !classifiedStaticImages.has(node) : settings.videos);
 }
 async function send<T>(message: unknown): Promise<T> { return await chrome.runtime.sendMessage(message) as T; }
 async function ensureOffscreen(): Promise<void> {
@@ -69,14 +78,13 @@ function prepareEngine(kind: 'image' | 'video' = 'image'): void {
   }).catch(() => { preparingEngine = undefined; });
 }
 async function imageBlob(url: string): Promise<Blob> {
-  if (/^(blob:|data:)/.test(url)) return await (await fetch(url, { signal: AbortSignal.timeout(8000) })).blob();
+  if (/^(blob:|data:)/.test(url)) return verifiedImageBlob(await (await fetch(url, { signal: AbortSignal.timeout(8000) })).blob());
   // Try the page's network context first, including CORS-enabled CDNs.
   try {
     const sameOrigin = new URL(url, location.href).origin === location.origin;
     const response = await fetch(url, { credentials: sameOrigin ? 'include' : 'omit', mode: 'cors', signal: AbortSignal.timeout(5000) });
     if (response.ok) {
-      const blob = await response.blob();
-      if (blob.type.startsWith('image/') && blob.size <= 20_000_000) return blob;
+      return await verifiedImageBlob(await response.blob());
     }
   } catch { /* Page CSP, CORS, or a slow CDN may block this path. */ }
   const response = await send<{ ok: boolean; blob?: Blob; error?: string }>({ type: 'fetch-image', url });
@@ -108,6 +116,8 @@ async function analyzeImageSource(node: HTMLImageElement, source: string, curren
     faceRgba = faceSize ? captureSquare(node, width, height, faceSize) : undefined;
   } catch { /* Cross-origin media needs the fetched, origin-clean bitmap. */ }
   const blob = await imageBlob(source);
+  const gif=await inspectAnimation(blob);
+  if(gif&&gif.durations.length>1)throw new AnimatedGifSource(blob,gif);
   if (!await sourceIsStatic(blob)) throw new Error('Animated or unverified image');
   if (!rgba) {
     const bitmap = await decodeImageBlob(blob);
@@ -120,12 +130,12 @@ async function analyzeImageSource(node: HTMLImageElement, source: string, curren
   }
   // The source owns this session, so removing/resetting the first element does
   // not cancel the result that another identical image is still awaiting.
-  const key: FrameKey = { mediaSessionId: crypto.randomUUID(), epoch: 1, sequence: 1 };
+  const key: FrameKey = { mediaSessionId: uniqueId(), epoch: 1, sequence: 1 };
   try {
     await ensureOffscreen();
     const response = await send<{ ok: boolean; result?: AnalysisResult; error?: string }>({ type: 'analyze',
       frame: { key, kind: 'image', acquisitionStartedAtMs, capturedAtMs: Date.now(),
-        width: size, height: size, rgba, faceRgba, faceSize } satisfies FramePacket, settings: current });
+        width: size, height: size, nativeWidth:width,nativeHeight:height,rgba, faceRgba, faceSize } satisfies FramePacket, settings: current });
     if (!response?.ok || !response.result) throw new Error(response?.error || 'not-ready');
     return { blob, key, width, height, timingsMs: response.result.timingsMs };
   } catch (error) {
@@ -135,14 +145,16 @@ async function analyzeImageSource(node: HTMLImageElement, source: string, curren
 }
 
 class MediaController {
-  private readonly sessionId = crypto.randomUUID();
+  private readonly sessionId = uniqueId();
   private epoch = 1;
   private sequence = 0;
   private result?: AnalysisResult;
+  private gif?: GifPlayback;
   private source = '';
   private inFlight = false;
   private refreshPending = false;
   private nextCaptureAt = 0;
+  private readonly pendingVideoFrame = new LatestVideoFrame();
   private videoErrors = 0;
   private sceneCuts = 0;
   private motion?: FrameMotion;
@@ -172,14 +184,16 @@ class MediaController {
 
   get viewportNode(): HTMLElement { return this.background?.element ?? this.node; }
   videoReadyForWork(): boolean {
-    return !this.disposed && !this.inFlight && !this.corsRecovery && !this.labelPending && !this.videoRetryTimer &&
+    return !document.hidden && !this.disposed && !this.inFlight && !this.corsRecovery && !this.labelPending && !this.videoRetryTimer &&
       this.node instanceof HTMLVideoElement && Date.now() >= this.nextCaptureAt &&
       (!this.node.paused || !this.result || this.refreshPending);
   }
   constructor(readonly node: HTMLImageElement | HTMLVideoElement, private background?: BackgroundSurface) {
-    node.dataset.localMediaCensorBuild = 'media-lifecycle-3';
-    this.originalFilter = node.style.getPropertyValue('filter');
-    this.originalFilterPriority = node.style.getPropertyPriority('filter');
+    node.dataset.localMediaCensorBuild = 'stylesheet-image-shield-4';
+    // Preview panels may clone a thumbnail while its extension blackout is set.
+    const inherited=node.hasAttribute(tag)&&node.dataset.localMediaCensorOriginalFilter!==undefined;
+    this.originalFilter = inherited?node.dataset.localMediaCensorOriginalFilter!:node.style.getPropertyValue('filter');
+    this.originalFilterPriority = inherited?(node.dataset.localMediaCensorOriginalFilterPriority??''):node.style.getPropertyPriority('filter');
     if (node instanceof HTMLImageElement) {
       registerImage(this);
       this.listen(node, 'load', () => { this.finishImageLoad(); this.reset('image-load'); this.sourceChanged(); });
@@ -190,7 +204,6 @@ class MediaController {
     } else {
       this.watchdog = window.setInterval(() => this.checkFreshness(), 100);
       this.listen(document, 'fullscreenchange', () => this.fullscreenChanged());
-      this.listen(document, 'visibilitychange', () => this.overlay?.draw());
       for (const name of ['loadedmetadata', 'resize', 'emptied']) this.listen(node, name, () => { this.reset(); this.sourceChanged(); });
       this.listen(node, 'loadeddata', () => this.sourceChanged());
       for (const name of ['seeking', 'ratechange']) this.listen(node, name, () => this.reset());
@@ -212,7 +225,7 @@ class MediaController {
   private ensureOverlay(): Overlay {
     if (!this.overlay) {
       this.overlay = new Overlay(this.node);
-      this.resize = new ResizeObserver(() => this.overlay?.draw());
+      this.resize = new ResizeObserver(() => {this.overlay?.draw();this.presentImageIfReady();});
       this.resize.observe(this.node);
       this.overlay.canvas.addEventListener('click', event => this.selectTrack(event));
       this.overlay.setPointerInput(labelMode);
@@ -234,6 +247,7 @@ class MediaController {
         if (this.motion) {
           video.dataset.localMediaCensorMotionFrames = String(this.motion.frames);
           video.dataset.localMediaCensorMotionWorkerMs = String(Math.round(this.motion.processingMs * 10) / 10);
+          if(this.blacked&&this.result&&!this.result.black&&this.motion.canPropagate(this.result,Date.now()))this.holdVideoMaskOrProtect();
         }
       });
       if (this.result && !this.result.black) this.motion.align(this.result);
@@ -246,9 +260,21 @@ class MediaController {
   }
   private protect(): void {
     if (!eligible(this.node)) return;
+    // The pending image blackout must also clear sibling fabric/effect canvases.
+    // Keep the controller's cached result so visibility recovery can repaint it.
+    if (this.node instanceof HTMLImageElement) this.overlay?.clear();
     if (this.background) { this.blacked = true; this.background.protect(); return; }
     this.blacked = true;
-    this.node.style.setProperty('filter', 'brightness(0)', 'important');
+    if(this.node instanceof HTMLVideoElement){
+      this.node.dataset.localMediaCensorOriginalFilter=this.originalFilter;
+      this.node.dataset.localMediaCensorOriginalFilterPriority=this.originalFilterPriority;
+      this.node.style.setProperty('filter', 'brightness(0)', 'important');
+    }else{
+      // Google copies thumbnail inline styles into a separate full-resolution
+      // image without copying our ownership attributes. Never put our blackout
+      // in an image's inline styles: it could become that preview's permanent filter.
+      this.node.toggleAttribute('data-local-media-censor-opacity-shield',!!this.node.style.filter&&this.node.style.getPropertyPriority('filter')==='important');
+    }
     this.node.setAttribute(tag, '');
     if (!this.node.dataset.localMediaCensorStatus) this.node.dataset.localMediaCensorStatus = 'pending';
   }
@@ -256,20 +282,25 @@ class MediaController {
     this.blacked = false;
     if (this.background) { if (!eligible(this.node)) this.background.release(); return; }
     this.node.removeAttribute(tag);
-    if (this.originalFilter) this.node.style.setProperty('filter', this.originalFilter, this.originalFilterPriority);
-    else this.node.style.removeProperty('filter');
+    delete this.node.dataset.localMediaCensorOriginalFilter;delete this.node.dataset.localMediaCensorOriginalFilterPriority;
+    this.node.removeAttribute('data-local-media-censor-opacity-shield');
+    if(this.node instanceof HTMLVideoElement){
+      if (this.originalFilter) this.node.style.setProperty('filter', this.originalFilter, this.originalFilterPriority);
+      else this.node.style.removeProperty('filter');
+    }
   }
   private holdVideoMaskOrProtect(): void {
-    if (this.node instanceof HTMLVideoElement && settings.videoPlayback === 'smooth' && this.result && !this.result.black) {
+    if (this.node instanceof HTMLVideoElement && settings.videoPlayback === 'smooth' && this.result && !this.result.black &&
+        !videoMaskNeedsProtection(this.result,Date.now(),this.node.currentTime,!!this.motion?.canPropagate(this.result,Date.now()),!!this.motion?.trackingLost(this.result),settings.videoPlayback)) {
       this.node.dataset.localMediaCensorStatus = 'propagated';
       this.overlay?.setMotion(this.motion?.offsets() ?? new Map());
-      if (this.blacked) this.reveal();
+      if (this.blacked&&this.overlay?.drawNow()) this.reveal();
       return;
     }
     if (this.node instanceof HTMLVideoElement && this.result && !this.result.black && this.motion?.canPropagate(this.result, Date.now())) {
       this.node.dataset.localMediaCensorStatus = 'propagated';
       this.overlay?.setMotion(this.motion.offsets());
-      if (this.blacked) this.reveal();
+      if (this.blacked&&this.overlay?.drawNow()) this.reveal();
     } else this.protect();
   }
   private currentSource(): string { return this.node instanceof HTMLImageElement ? this.node.currentSrc || this.node.src : videoSourceKey(this.node); }
@@ -280,6 +311,8 @@ class MediaController {
   }
   private key(): FrameKey { return { mediaSessionId: this.sessionId, epoch: this.epoch, sequence: ++this.sequence }; }
   private reset(reason = 'state-change', capture = true): void {
+    this.gif?.dispose();this.gif=undefined;
+    if(this.node instanceof HTMLImageElement){animatedImages.delete(this.node);classifiedStaticImages.delete(this.node);}
     this.finishImageLoad();
     this.lazyAheadStarted = false;
     this.node.dataset.localMediaCensorResetReason = reason;
@@ -293,6 +326,7 @@ class MediaController {
     this.epoch++;
     this.sequence = 0;
     this.nextCaptureAt = 0;
+    this.pendingVideoFrame.clear();
     this.result = undefined;
     this.motion?.reset();
     this.overlay?.clear();
@@ -332,6 +366,7 @@ class MediaController {
     const source = this.currentSource();
     if (source !== this.source) { this.source = source; this.reset('source-change'); }
     if (this.node instanceof HTMLImageElement) {
+      if(this.gif){this.gif.update();return;}
       requestImageWork();
     } else if (this.node.readyState >= 2) {
       if (this.node.paused) void this.captureVideo();
@@ -348,6 +383,7 @@ class MediaController {
   }
   reprocessFaces(): void {
     if (this.disposed) return;
+    if(this.gif){this.gif.update(true);return;}
     this.reset();
     if (this.node instanceof HTMLImageElement) requestImageWork();
     else if (!this.node.paused) this.startVideo();
@@ -398,7 +434,13 @@ class MediaController {
       }
       this.holdVideoMaskOrProtect();
     }
-    finally { this.inFlight = false; this.maybeRefresh(); }
+    finally {
+      this.inFlight = false; this.maybeRefresh();
+      const next = this.pendingVideoFrame.take(this.sessionId, this.epoch, Date.now());
+      if (next && !this.inFlight && !this.disposed && !this.labelPending && !this.corsRecovery &&
+          !document.hidden && this.node instanceof HTMLVideoElement && !this.node.paused && videoHasLiveSource(this.node) && eligible(this.node) && videoAdmitted(this.node))
+        void this.dispatch(next);
+    }
   }
   private accept(result: AnalysisResult): void {
     this.syncVideoSource();
@@ -421,7 +463,7 @@ class MediaController {
     const lateVideo = this.node instanceof HTMLVideoElement && !this.node.paused &&
       (Date.now() - result.capturedAtMs > ENGINE.maxResultAgeMs ||
         (result.mediaTimeSec !== undefined && Math.abs(this.node.currentTime - result.mediaTimeSec) > ENGINE.maxResultAgeMs / 1000));
-    if (lateVideo && settings.videoPlayback === 'strict' && !this.motion?.canPropagate(result, Date.now())) {
+    if (this.node instanceof HTMLVideoElement&&!this.node.paused&&videoMaskNeedsProtection(result,Date.now(),this.node.currentTime,!!this.motion?.canPropagate(result,Date.now()),!!this.motion?.trackingLost(result),settings.videoPlayback)) {
       this.node.dataset.localMediaCensorStatus = 'stale';
       this.protect();
       return;
@@ -440,13 +482,18 @@ class MediaController {
     }
     this.overlay?.draw();
   }
+  presentImageIfReady():void{
+    if(this.node instanceof HTMLImageElement&&!this.gif&&this.blacked&&this.result&&!this.result.black&&
+      this.result.settingsRevision===settings.revision&&this.currentSource()===this.source&&
+      imageWorkRange(this.viewportNode.getBoundingClientRect(),innerWidth,innerHeight)==='visible')this.accept(this.result);
+  }
   imageReadyForWork(): boolean {
-    return this.node instanceof HTMLImageElement && this.viewportNode.isConnected && !this.disposed && !this.inFlight && !this.imageBlocked && !this.imageRetryTimer &&
+    return this.node instanceof HTMLImageElement && !this.gif && this.viewportNode.isConnected && !this.disposed && !this.inFlight && !this.imageBlocked && !this.imageRetryTimer &&
       eligible(this.node) && this.node.complete && this.node.naturalWidth > 0 && !!this.currentSource() &&
       (!this.result || this.result.settingsRevision < settings.revision);
   }
   imageHasPendingWork(): boolean {
-    return this.node instanceof HTMLImageElement && this.viewportNode.isConnected && !this.disposed && !this.imageBlocked &&
+    return this.node instanceof HTMLImageElement && !this.gif && this.viewportNode.isConnected && !this.disposed && !this.imageBlocked &&
       eligible(this.node) && !!this.currentSource() && (!this.node.complete || this.node.naturalWidth > 0) &&
       (!this.result || this.result.settingsRevision < settings.revision);
   }
@@ -481,6 +528,16 @@ class MediaController {
   markWaitingViewport(): void {
     if (this.node instanceof HTMLImageElement && !this.result && !this.imageBlocked && !this.inFlight) this.node.dataset.localMediaCensorStatus = 'waiting-viewport';
   }
+  animationActive():boolean{return this.gif?.isPlaying()??false;}
+  private activateGif(source:AnimatedGifSource):void{
+    if(!(this.node instanceof HTMLImageElement))return;
+    animatedImages.add(this.node);classifiedStaticImages.delete(this.node);this.overlay?.dispose();this.overlay=undefined;this.result=undefined;
+    this.gif?.dispose();this.gif=new GifPlayback(this.node,source.blob,source.info,{
+      background:this.background,target:this.viewportNode,settings:()=>settings,enabled:()=>protectedSite()&&settings.videos,admitted:()=>videoAdmitted(this.node),
+      analyze:async(frame,current)=>{await ensureOffscreen();const response=await send<{ok:boolean;result?:AnalysisResult;error?:string}>({type:'analyze',frame,settings:current});if(!response.ok||!response.result)throw Error(response.error??'GIF analysis unavailable');return response.result;},
+      reset:(id,epoch)=>{void send({type:'reset-session',mediaSessionId:id,epoch}).catch(()=>{});},protect:()=>this.protect(),release:()=>this.reveal(),
+    });prepareEngine('video');
+  }
   private async captureImage(): Promise<void> {
     if (!eligible(this.node) || !(this.node instanceof HTMLImageElement) || this.inFlight || !this.node.naturalWidth) return;
     this.inFlight = true;
@@ -491,6 +548,12 @@ class MediaController {
     const sharedKey = JSON.stringify([source, imageAnalysisKey(current)]);
     try {
       if (!source) return;
+      if(!current.images){
+        const blob=await imageBlob(source),info=await inspectAnimation(blob);
+        if(this.epoch!==captureEpoch||this.disposed)return;
+        if(info&&info.durations.length>1){this.activateGif(new AnimatedGifSource(blob,info));return;}
+        classifiedStaticImages.add(this.node);this.node.dataset.localMediaCensorKind=info&&info.type!=='image/webp'?'gif-image':'image';this.reveal();return;
+      }
       const work = sharedImages.get(sharedKey, () => analyzeImageSource(this.node as HTMLImageElement, source, current));
       this.node.dataset.localMediaCensorImageReuse = String(work.reused);
       const shared = await work.promise;
@@ -499,6 +562,8 @@ class MediaController {
           imageAnalysisKey(settings) !== imageAnalysisKey(current)) return;
       const aspectDifference = Math.abs(shared.width * this.node.naturalHeight - shared.height * this.node.naturalWidth);
       if (aspectDifference > Math.max(shared.width, shared.height)) throw new Error('Fetched image differs in aspect ratio');
+      classifiedStaticImages.add(this.node);
+      this.node.dataset.localMediaCensorKind=shared.blob.type.split(';')[0]==='image/gif'?'gif-image':'image';
       this.background?.source(shared.blob);
       this.node.dataset.localMediaCensorAcquireMs = String(Math.round(performance.now() - acquireStarted));
       // Each element adopts its own mutable session for masks and manual labels.
@@ -516,6 +581,7 @@ class MediaController {
       this.accept(response.result);
     } catch (error) {
       if (this.epoch !== captureEpoch || this.disposed) return;
+      if(error instanceof AnimatedGifSource){this.activateGif(error);return;}
       const message = error instanceof Error ? error.message : 'image-error';
       this.node.dataset.localMediaCensorStatus = message;
       if (message === 'Animated or unverified image' || message === 'Fetched image differs in aspect ratio') this.imageBlocked = true;
@@ -525,11 +591,11 @@ class MediaController {
     finally { this.inFlight = false; this.maybeRefresh(); }
   }
   private startVideo(): void {
-    if (!(this.node instanceof HTMLVideoElement) || this.frameCallback) return;
+    if (document.hidden || !(this.node instanceof HTMLVideoElement) || this.frameCallback) return;
     const video = this.node;
     const loop = (_now: number, metadata: VideoFrameCallbackMetadata) => {
       this.frameCallback = 0;
-      if (this.disposed || video.paused || !eligible(video)) return;
+      if (document.hidden || this.disposed || video.paused || !eligible(video)) return;
       this.syncVideoSource();
       if (!videoAdmitted(video)) { video.dataset.localMediaCensorStatus = 'capacity'; this.protect(); }
       else if (!this.corsRecovery) {
@@ -538,17 +604,24 @@ class MediaController {
         motion?.observe(video, Date.now());
         if (motion?.error) video.dataset.localMediaCensorMotionError = motion.error;
         video.dataset.localMediaCensorMotionMs = String(Math.round((performance.now() - motionStarted) * 10) / 10);
-        this.overlay?.setMotion(motion?.offsets() ?? new Map());
-        if (Date.now() >= this.nextCaptureAt && !this.inFlight) void this.captureVideo(metadata.mediaTime);
+        // Commit in this presentation callback, not the next animation frame.
+        if(this.result)this.overlay?.setVideoPadding(settings.videoPlayback==='smooth'
+          ?videoMaskPadding(this.result,Date.now(),metadata.mediaTime,!!motion?.canPropagate(this.result,Date.now()),!!motion?.trackingLost(this.result)):0);
+        this.overlay?.setMotion(motion?.offsets() ?? new Map(),true);
+        if(this.result&&!this.result.black){
+          if(videoMaskNeedsProtection(this.result,Date.now(),metadata.mediaTime,!!motion?.canPropagate(this.result,Date.now()),!!motion?.trackingLost(this.result),settings.videoPlayback)){
+            video.dataset.localMediaCensorStatus='stale';this.protect();
+          }else if(this.blacked&&this.overlay?.drawNow())this.reveal();
+        }
+        if (Date.now() >= this.nextCaptureAt && (!this.inFlight || !meetingPage)) void this.captureVideo(metadata.mediaTime);
       }
       this.frameCallback = video.requestVideoFrameCallback(loop);
-      this.overlay?.draw();
     };
     this.frameCallback = video.requestVideoFrameCallback(loop);
   }
   private async captureVideo(mediaTime?: number): Promise<void> {
     this.syncVideoSource();
-    if (!eligible(this.node) || !(this.node instanceof HTMLVideoElement) || this.inFlight || this.corsRecovery || this.labelPending || this.node.readyState < 2) return;
+    if (document.hidden || !eligible(this.node) || !(this.node instanceof HTMLVideoElement) || (this.inFlight && meetingPage) || this.corsRecovery || this.labelPending || this.node.readyState < 2) return;
     if (!videoHasLiveSource(this.node)) { this.protect(); return; }
     if (!videoAdmitted(this.node)) { this.node.dataset.localMediaCensorStatus = 'capacity'; this.protect(); return; }
     const video = this.node;
@@ -559,8 +632,7 @@ class MediaController {
     // One request stays in flight per video. Advanced masks should follow the
     // source as quickly as inference allows, rather than inherit the 4–8 Hz
     // whole-person sampling budget. Never build a backlog of obsolete frames.
-    const rate = settings.videoDetector === 'fast-box' ? 12 : ENGINE.modes[settings.performance].initialHz;
-    this.nextCaptureAt = settings.advancedVideoMode ? 0 : Date.now() + 1000 / rate;
+    this.nextCaptureAt = settings.performance === 'performance' && !settings.advancedVideoMode ? Date.now() + 60 : 0;
     try {
       // Some decoders initially return a blank frame before reporting taint.
       // Do not accept that as an analyzed, safe cross-origin video.
@@ -576,10 +648,12 @@ class MediaController {
       const key = this.key();
       video.dataset.localMediaCensorCaptureSequence = String(key.sequence);
       video.dataset.localMediaCensorCaptureMs = String(Math.round(performance.now() - captureStarted));
-      await this.dispatch({ key, kind: 'video', mediaTimeSec: mediaTime ?? video.currentTime,
+      const packet: FramePacket = { key, kind: 'video', mediaTimeSec: mediaTime ?? video.currentTime,
         paused: video.paused,
         capturedAtMs: Date.now(), width: size, height: size, rgba, faceRgba, faceSize: faceRgba ? settings.faceCaptureSize : undefined,
-        motionTracks: this.motion?.predictedTracks() });
+        motionTracks: this.motion?.predictedTracks() };
+      if (this.inFlight) this.pendingVideoFrame.offer(packet);
+      else await this.dispatch(packet);
     } catch (error) {
       this.node.dataset.localMediaCensorStatus = error instanceof Error ? error.message : 'capture-error';
       if (error instanceof DOMException && error.name === 'SecurityError') {
@@ -606,6 +680,7 @@ class MediaController {
   }
   private checkFreshness(): void {
     if (this.disposed || !this.node.isConnected) { this.dispose(); return; }
+    if (document.hidden) return;
     if (!eligible(this.node)) { this.overlay?.clear(); if (this.blacked) this.reveal(); return; }
     this.syncVideoSource();
     if (this.node instanceof HTMLVideoElement && !videoHasLiveSource(this.node)) {
@@ -621,16 +696,36 @@ class MediaController {
       if (!this.corsRecovery) this.node.dataset.localMediaCensorStatus = this.node.dataset.localMediaCensorCaptureAccess === 'unreadable' ? 'video-capture-unavailable' : 'stale';
       this.protect(); return;
     }
-    if (settings.videoPlayback === 'strict' && (Date.now() - this.result.capturedAtMs > ENGINE.maxResultAgeMs ||
-        (this.result.mediaTimeSec !== undefined && Math.abs(this.node.currentTime - this.result.mediaTimeSec) > ENGINE.maxResultAgeMs / 1000))) {
-      if (!this.result.black && this.motion?.canPropagate(this.result, Date.now())) {
-        this.node.dataset.localMediaCensorStatus = 'propagated';
-        if (this.blacked) { this.ensureOverlay().set(this.result); this.reveal(); }
-        this.overlay?.setMotion(this.motion.offsets());
-        return;
-      }
+    if (videoMaskNeedsProtection(this.result,Date.now(),this.node.currentTime,!!this.motion?.canPropagate(this.result,Date.now()),!!this.motion?.trackingLost(this.result),settings.videoPlayback)) {
       this.node.dataset.localMediaCensorStatus = 'stale';
       this.protect();
+    }
+  }
+
+  visibilityChanged(): void {
+    if (this.disposed) return;
+    if(this.gif){this.gif.update();return;}
+    if (this.node instanceof HTMLVideoElement) {
+      if (this.frameCallback) this.node.cancelVideoFrameCallback(this.frameCallback);
+      this.frameCallback = 0;
+      this.pendingVideoFrame.clear();
+      this.motion?.reset();
+      this.nextCaptureAt = 0;
+    }
+    if (document.hidden || !eligible(this.node)) return;
+    if (this.node instanceof HTMLImageElement) {
+      // A hidden-tab result can be valid even if its canvas could not be painted.
+      // Re-present it through accept(), which also releases the pending blackout.
+      if (this.result) this.accept(this.result);
+      if (this.imageRetryTimer) { clearTimeout(this.imageRetryTimer); this.imageRetryTimer = 0; }
+      if (this.node.complete && this.node.naturalWidth > 0 && this.node.dataset.localMediaCensorStatus === 'image-load-error') this.imageBlocked = false;
+      this.sourceChanged();
+    } else {
+      // Cancel/resubscribe even if a pre-hide callback handle never fired again.
+      // Keep identities and settled work; only refresh the current video frame.
+      this.refreshPending = true;
+      this.sourceChanged();
+      this.maybeRefresh();
     }
   }
   private fullscreenChanged(): void {
@@ -640,6 +735,7 @@ class MediaController {
     this.overlay?.draw();
   }
   async reevaluate(): Promise<void> {
+    if(this.gif){this.gif.update(true);return;}
     if (!eligible(this.node)) {
       this.overlay?.clear(); this.reveal();
       this.node.dataset.localMediaCensorStatus = protectedSite() ? 'off' : settings.enabled ? 'site-exception' : 'off';
@@ -654,6 +750,7 @@ class MediaController {
   }
   siteAccessChanged(): void {
     if (this.disposed) return;
+    if(this.gif){this.gif.update(true);return;}
     if (!eligible(this.node) && this.node instanceof HTMLVideoElement && this.frameCallback) {
       this.node.cancelVideoFrameCallback(this.frameCallback);
       this.frameCallback = 0;
@@ -741,14 +838,18 @@ class MediaController {
     if (this.disposed || !this.viewportNode.isConnected || !eligible(this.node)) return;
     const rect = this.viewportNode.getBoundingClientRect();
     if (!rect.width || !rect.height || rect.bottom <= 0 || rect.right <= 0 || rect.top >= innerHeight || rect.left >= innerWidth) return;
-    const tracks = this.result?.tracks ?? [];
+    const current=this.gif?.getResult()??this.result;
+    const tracks = current?.tracks ?? [];
     const labelled = tracks.filter(track => track.labelUsable && track.label !== 'unknown').length;
     const automatic = tracks.filter(track => track.labelUsable && track.labelSource === 'automatic').length;
     const male = tracks.filter(track => track.labelUsable && track.label === 'male').length;
     const female = tracks.filter(track => track.labelUsable && track.label === 'female').length;
-    return { analyzed: Number(Boolean(this.result)), detected: tracks.length, labelled, automatic, male, female, unlabelled: tracks.length - labelled };
+    return { analyzed: Number(Boolean(current)), detected: tracks.length, labelled, automatic, male, female, unlabelled: tracks.length - labelled };
   }
   dispose(): void {
+    this.gif?.dispose();
+    if(this.node instanceof HTMLImageElement){animatedImages.delete(this.node);classifiedStaticImages.delete(this.node);}
+    this.pendingVideoFrame.clear();
     if (this.disposed) return;
     this.disposed = true;
     this.corsAbort.abort();
@@ -781,7 +882,7 @@ const imageObserver = new IntersectionObserver(entries => {
   for (const entry of entries) {
     for (const controller of imageTargets.get(entry.target) ?? []) {
       if (entry.isIntersecting && entry.intersectionRect.width > 0 && entry.intersectionRect.height > 0) {
-        visibleImages.add(controller);
+        visibleImages.add(controller);controller.presentImageIfReady();
         if (controller.imageReadyForWork()) controller.node.dataset.localMediaCensorStatus = 'queued';
       } else {
         visibleImages.delete(controller);
@@ -868,6 +969,7 @@ function reconcileVisibleImages(): void {
   if (document.hidden) return;
   let added = false;
   for (const controller of controllers) {
+    controller.presentImageIfReady();
     if (!(controller.node instanceof HTMLImageElement) || !controller.imageHasPendingWork()) continue;
     const rect = controller.viewportNode.getBoundingClientRect();
     const range = imageWorkRange(rect, innerWidth, innerHeight);
@@ -879,15 +981,16 @@ function reconcileVisibleImages(): void {
   if (added) requestImageWork();
 }
 window.setInterval(reconcileVisibleImages, 1500);
-document.addEventListener('visibilitychange', requestImageWork);
 
-function videoAdmitted(video: HTMLVideoElement): boolean {
-  if (meetingPage) return visibleMeetingVideos().includes(video);
-  if (video.paused) return true;
-  const ranked = [...controllers].map(controller => controller.node)
-    .filter((node): node is HTMLVideoElement => node instanceof HTMLVideoElement && node.isConnected && !node.paused)
-    .map(node => {
-      const rect = node.getBoundingClientRect();
+function videoAdmitted(video: HTMLVideoElement | HTMLImageElement): boolean {
+  if(document.hidden)return false;
+  if (meetingPage && video instanceof HTMLVideoElement) return visibleMeetingVideos().includes(video);
+  if (video instanceof HTMLVideoElement && video.paused) return true;
+  const ranked = [...controllers]
+    .filter(controller => controller.viewportNode.isConnected && eligible(controller.node) &&
+      (controller.node instanceof HTMLVideoElement ? !controller.node.paused : controller.animationActive()))
+    .map(controller => {
+      const node=controller.node,rect = controller.viewportNode.getBoundingClientRect();
       const visibleWidth = Math.max(0, Math.min(rect.right, innerWidth) - Math.max(rect.left, 0));
       const visibleHeight = Math.max(0, Math.min(rect.bottom, innerHeight) - Math.max(rect.top, 0));
       const area = visibleWidth * visibleHeight;
@@ -914,10 +1017,21 @@ function add(node: HTMLImageElement | HTMLVideoElement): void {
   else byNode.get(node)?.sourceChanged();
 }
 const discovery = new MediaDiscovery(add, node => byNode.get(node)?.dispose(), pendingCss);
-const backgrounds = new BackgroundImages(() => protectedSite() && settings.images, (image, surface) => {
+const backgrounds = new BackgroundImages(() => protectedSite() && (settings.images || settings.videos), (image, surface) => {
   const controller = new MediaController(image, surface);
   controllers.add(controller);
   return controller;
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    for (const controller of controllers) controller.visibilityChanged();
+    return;
+  }
+  // Validate the host again after browser backgrounding/discard pressure.
+  ensuringOffscreen = undefined; preparingKey = '';
+  discovery.inspect(document); backgrounds.refresh();
+  for (const controller of controllers) controller.visibilityChanged();
+  reconcileVisibleImages(); requestImageWork();
 });
 document.addEventListener('DOMContentLoaded', () => discovery.inspect(document), { once: true });
 for (const eventName of ['popstate', 'hashchange', 'pageshow', 'yt-navigate-finish']) {

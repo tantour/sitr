@@ -20,9 +20,12 @@ for (const [name, entry, formats] of [
   ['motion-worker', 'src/media/motionWorker.ts', ['iife']],
   ['semantic-worker', 'src/vision/semanticWorker.ts', ['iife']],
   ['motion-host', 'src/media/motionHost.ts', ['iife']],
+  ['gif-host', 'src/media/gifHost.ts', ['iife']],
   ['person-runtime', 'src/vision/personRuntime.ts', ['es']],
   ['content', 'src/content/index.ts', ['iife']],
   ['popup', 'src/ui/popup.ts', ['es']],
+  ['pdf', 'src/pdf/viewer.ts', ['es']],
+  ['pdf-layout-worker','src/pdf/layoutWorker.ts',['iife']],
 ]) {
   await build({
     configFile: false,
@@ -33,12 +36,12 @@ for (const [name, entry, formats] of [
       emptyOutDir: false,
       target: 'chrome148',
       minify: 'esbuild',
-      lib: { entry: resolve(root, entry), name: name === 'content' ? 'LocalMediaCensor' : name === 'worker' ? 'LocalVisionWorker' : name === 'motion-worker' ? 'LocalMotionWorker' : name === 'semantic-worker' ? 'LocalSemanticWorker' : name === 'motion-host' ? 'LocalMotionHost' : undefined, formats, fileName: () => `${name}.js` },
+      lib: { entry: resolve(root, entry), name: name === 'content' ? 'LocalMediaCensor' : name === 'worker' ? 'LocalVisionWorker' : name === 'motion-worker' ? 'LocalMotionWorker' : name === 'semantic-worker' ? 'LocalSemanticWorker' : name === 'motion-host' ? 'LocalMotionHost' : name === 'gif-host' ? 'LocalGifHost' : name === 'pdf-layout-worker' ? 'PdfLayoutWorker' : undefined, formats, fileName: () => `${name}.js` },
       rollupOptions: { output: { inlineDynamicImports: true } },
     },
   });
 }
-for (const file of ['manifest.json', 'offscreen.html', 'motion.html', 'popup.html', 'popup.css', 'LICENSE', 'NOTICE.md', 'PRIVACY.md', 'SOURCE.md', 'README.md', 'BENCHMARK.md']) await cp(resolve(root, file), resolve(out, file));
+for (const file of ['manifest.json', 'pdf.html', 'pdf.css', 'gif.html', 'offscreen.html', 'motion.html', 'popup.html', 'popup.css', 'LICENSE', 'NOTICE.md', 'PRIVACY.md', 'SOURCE.md', 'README.md', 'BENCHMARK.md']) await cp(resolve(root, file), resolve(out, file));
 await cp(resolve(root, 'LICENSES'), resolve(out, 'LICENSES'), { recursive: true });
 await cp(resolve(root, 'docs'), resolve(out, 'docs'), { recursive: true });
 await mkdir(resolve(out, 'icons'), { recursive: true });
@@ -61,3 +64,9 @@ const mpFiles = ['vision_wasm_internal.wasm', 'vision_wasm_internal.js', 'vision
 for (const file of mpFiles) await cp(resolve(root, 'node_modules/@mediapipe/tasks-vision/wasm', file), resolve(out, 'wasm', file));
 const manifest = JSON.parse(await readFile(resolve(out, 'manifest.json'), 'utf8'));
 await writeFile(resolve(out, 'manifest.json'), JSON.stringify(manifest, null, 2));
+
+await mkdir(resolve(out,'pdfjs'),{recursive:true});
+for(const dir of ['cmaps','standard_fonts','wasm','iccs'])await cp(resolve(root,'node_modules/pdfjs-dist',dir),resolve(out,'pdfjs',dir),{recursive:true});
+await cp(resolve(root,'node_modules/pdfjs-dist/build/pdf.worker.mjs'),resolve(out,'pdfjs/pdf.worker.mjs'));
+await cp(resolve(root,'node_modules/pdfjs-dist/web/pdf_viewer.css'),resolve(out,'pdfjs/pdf_viewer.css'));
+await cp(resolve(root,'node_modules/pdfjs-dist/LICENSE'),resolve(out,'pdfjs/LICENSE'));

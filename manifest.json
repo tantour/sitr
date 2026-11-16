@@ -1,19 +1,28 @@
 {
   "manifest_version": 3,
   "name": "Sitr",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "Private image and video protection, processed locally.",
   "minimum_chrome_version": "148",
   "message_serialization": "structured_clone",
-  "permissions": ["offscreen", "storage"],
-  "host_permissions": ["http://*/*", "https://*/*"],
+  "permissions": [
+    "offscreen",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
   "icons": {
     "16": "icons/sitr-16.png",
     "32": "icons/sitr-32.png",
     "48": "icons/sitr-48.png",
     "128": "icons/sitr-128.png"
   },
-  "background": { "service_worker": "background.js", "type": "module" },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
   "action": {
     "default_title": "Sitr",
     "default_icon": {
@@ -23,9 +32,47 @@
     },
     "default_popup": "popup.html"
   },
-  "content_scripts": [{ "matches": ["http://*/*", "https://*/*"], "js": ["content.js"], "run_at": "document_start", "all_frames": true }],
-  "web_accessible_resources": [{ "resources": ["motion.html", "motion-host.js", "motion-worker.js"], "matches": ["http://*/*", "https://*/*"] }],
-  "content_security_policy": { "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" },
-  "cross_origin_opener_policy": { "value": "same-origin" },
-  "cross_origin_embedder_policy": { "value": "require-corp" }
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "motion.html",
+        "motion-host.js",
+        "motion-worker.js",
+        "gif.html",
+        "gif-host.js"
+      ],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "cross_origin_opener_policy": {
+    "value": "same-origin"
+  },
+  "cross_origin_embedder_policy": {
+    "value": "require-corp"
+  },
+  "mime_types_handler": {
+    "application/pdf": {
+      "handler_url": "pdf.html",
+      "can_embed": true
+    }
+  }
 }

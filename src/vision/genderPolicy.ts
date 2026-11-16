@@ -3,16 +3,20 @@
 import type { Track } from '../state/contracts';
 
 export const VIDEO_GENDER_INTERVAL_MS = 1000;
+export function videoGenderInterval(track: Track): number {
+  if (track.pendingGenderLabel || track.labelSource === 'automatic' && !track.labelUsable) return 200;
+  return track.labelUsable && track.labelSource === 'automatic' ? 4000 : VIDEO_GENDER_INTERVAL_MS;
+}
 
 export function nextVideoGenderCheck(tracks: Track[]): number {
   return tracks.reduce((next, track) => track.labelSource === 'user' || track.state === 'lost' || track.state === 'ambiguous'
-    ? next : Math.min(next, track.lastGenderCheckAt === undefined ? 0 : track.lastGenderCheckAt + VIDEO_GENDER_INTERVAL_MS), Number.MAX_SAFE_INTEGER);
+    ? next : Math.min(next, track.lastGenderCheckAt === undefined ? 0 : track.lastGenderCheckAt + videoGenderInterval(track)), Number.MAX_SAFE_INTEGER);
 }
 
-/** New identities are checked immediately; existing identities get their own one-second cadence. */
+/** Confirm new/contradictory evidence quickly; established identity needs fewer checks. */
 export function genderCheckDue(track: Track, now: number): boolean {
   return track.labelSource !== 'user' && track.state !== 'lost' && track.state !== 'ambiguous' &&
-    (track.lastGenderCheckAt === undefined || now - track.lastGenderCheckAt >= VIDEO_GENDER_INTERVAL_MS);
+    (track.lastGenderCheckAt === undefined || now - track.lastGenderCheckAt >= videoGenderInterval(track));
 }
 
 export function canUseBodyGender(track: Track, kind: 'image' | 'video', fallback: boolean,

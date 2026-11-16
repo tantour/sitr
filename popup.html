@@ -26,7 +26,7 @@
         <button type="button" data-section="coverage" aria-current="page">Coverage</button>
         <button type="button" data-section="detection">Detection</button>
         <button type="button" data-section="performance">Performance</button>
-        <button type="button" data-section="diagnostics">Diagnostics</button>
+        <button type="button" data-section="diagnostics">Troubleshooting</button>
         <button type="button" data-section="websites">Websites</button>
         <p>All processing stays on your device.</p>
       </nav>
@@ -40,23 +40,35 @@
             <fieldset class="media-options"><legend>Apply to</legend>
               <label class="media-option"><input id="images" type="checkbox" disabled><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="9" r="1.5"/><path d="m4 17 5-5 3 3 2-2 6 5"/></svg><span>Images</span></label>
               <label class="media-option"><input id="videos" type="checkbox" disabled><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="m10 9 5 3-5 3V9Z"/></svg><span>Videos</span></label>
+              <label class="media-option"><input id="pdfs" type="checkbox" disabled><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 3h8l4 4v14H6Z"/><path d="M14 3v5h4M9 12h6M9 16h6"/></svg><span>PDFs</span></label>
             </fieldset>
           </div>
+
           <section class="appearance-settings" aria-label="Coverage appearance">
             <div class="media-tabs popup-only" role="tablist" aria-label="Appearance settings">
               <button id="imagesTab" type="button" role="tab" aria-selected="true" aria-controls="imagePanel" tabindex="0">Images</button>
               <button id="videosTab" type="button" role="tab" aria-selected="false" aria-controls="videoPanel" tabindex="-1">Videos</button>
             </div>
+            <fieldset class="cover-style" aria-describedby="fabricFillHelp">
+              <legend>Cover style</legend>
+              <div class="cover-style-options">
+                <label class="cover-style-choice"><input id="blackFill" name="coverStyle" type="radio" value="black" disabled><span class="style-swatch style-black" aria-hidden="true"></span><span><strong>Black</strong><small>Solid coverage</small></span></label>
+                <label class="cover-style-choice"><input id="fabricFill" name="coverStyle" type="radio" value="fabric" disabled><span class="style-swatch style-fabric" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m8 4-5 4 3 4 2-1v9h8v-9l2 1 3-4-5-4c0 3-8 3-8 0Z"/></svg></span><span><strong>Smart clothing</strong><small>Blend with nearby clothes</small></span></label>
+              </div>
+              <p id="fabricFillHelp" class="setting-hint">Applies to body coverage in images and videos. Hair stays black; face effects keep their own settings.</p>
+            </fieldset>
             <div class="appearance-columns">
               <section id="imagePanel" class="appearance-group" role="tabpanel" aria-labelledby="imagesTab" tabindex="0">
-                <h2 class="settings-only">Image appearance</h2>
+                <h2 class="settings-only">Images</h2>
+                <p class="editor-intro">Choose a group, then an area to show or cover.</p>
+                <p class="setting-hint">PDFs use the Images settings below.</p>
                 <p id="imagesDisabled" class="media-disabled" hidden>Image protection is off. Turn on Images above to apply these settings.</p>
 
                 <div class="image-settings-bar">
                   <label class="setting-field">Cover area <select id="imageCoverage"><option value="regions">Chosen areas</option><option value="whole-body">Whole body</option></select></label>
                   <div class="bodypix-controls">
-                    <label class="bodypix-toggle"><input id="bodyPixEnabled" type="checkbox"><span><strong>Advanced segmentation</strong><small id="bodyPixModeHelp">Off · body skin together</small></span></label>
-                    <select id="imageBodyRegionMode" aria-label="Segmentation quality"><option value="off" hidden disabled>Off</option><option value="faster">Fast</option><option value="finer">Quality</option></select>
+                    <label class="bodypix-toggle"><input id="bodyPixEnabled" type="checkbox"><span><strong>Choose body areas</strong><small id="bodyPixModeHelp">Body skin is covered together</small></span></label>
+                    <select id="imageBodyRegionMode" aria-label="Segmentation quality"><option value="off" hidden disabled>Off</option><option value="faster">Faster</option><option value="finer">More detail</option></select>
                   </div>
                 </div>
                 <div id="personEditor" class="person-editor">
@@ -96,23 +108,13 @@
         <label class="check-option"><input id="imageFaceEffectGrayscale" type="checkbox"> Grayscale face effect</label>
       </div>
                       <p id="personAreaHelp" class="setting-hint"></p>
-                      <div id="partThresholdControls" hidden>
-                        <label for="partThresholdTarget">Part threshold · images only</label>
-                        <select id="partThresholdTarget"><option value="off">Off</option><option value="part">Hide entire part</option><option value="body">Hide entire body</option></select>
-                        <div id="partThresholdPercentControl" hidden>
-                          <label for="partThresholdPercent">Skin above (%)</label>
-                          <input id="partThresholdPercent" type="number" min="0" max="100" step="1" value="50" aria-describedby="partThresholdHelp">
-                        </div>
-                        <p id="partThresholdHelp" class="setting-hint">Skin is measured against this part including clothes. The rule adds coverage when exceeded; Show/Hide still applies.</p>
-                        <div id="partThresholdFaceControl" hidden>
-                          <label for="partThresholdFace">Face when body threshold triggers</label>
-                          <select id="partThresholdFace"><option value="black">Black</option><option value="show">Show</option></select>
-                        </div>
-                      </div>
+
                     </div>
                   </div>
                 </div>
-                <details id="imageAdvancedOptions" class="effect-details image-advanced"><summary>Image options</summary>
+                <details id="imageAdvancedOptions" class="effect-details image-advanced"><summary>More image options</summary>
+                  <label class="check-option"><input id="thumbnailFallback" type="checkbox"> Extra coverage for unreadable thumbnails</label>
+                  <p class="setting-hint">When a tiny image has a detected person but no readable skin detail, cover the person if all body areas are set to Hide. This can also cover clothing. Conditional rules keep their own thresholds.</p>
                   <p class="setting-hint">Advanced segmentation is image-only and adds processing time. Quality is slower but gives finer detail. Overlapping parts can be misclassified.</p>
                   <p class="setting-hint">Chest and belly follow body orientation. Unrecognized skin has its own choice in the area menu.</p>
                   <p id="wholeBodyOverrideHelp" class="setting-hint" hidden>Whole-body mode covers the silhouette of people with hidden areas. Choose Chosen areas to use the diagram literally.</p>
@@ -127,10 +129,11 @@
                 </details>
               </section>
               <section id="videoPanel" class="appearance-group" role="tabpanel" aria-labelledby="videosTab" tabindex="0" hidden>
-                <h2 class="settings-only">Video appearance</h2>
+                <h2 class="settings-only">Videos</h2>
+                <p class="editor-intro">Choose whole-person coverage or more detailed skin coverage.</p>
                 <p id="videosDisabled" class="media-disabled" hidden>Video protection is off. Turn on Videos above to apply these settings.</p>
                 <div class="bodypix-controls">
-                  <label class="bodypix-toggle"><input id="advancedVideoMode" type="checkbox" aria-describedby="advancedVideoCost"><span><strong>Advanced video mode</strong><small id="advancedVideoCost">Heavy on performance</small></span></label>
+                  <label class="bodypix-toggle"><input id="advancedVideoMode" type="checkbox" aria-describedby="advancedVideoCost"><span><strong>Cover skin instead of whole people</strong><small id="advancedVideoCost">Uses more processing</small></span></label>
                 </div>
                 <div id="videoEditor" class="person-editor video-editor">
                   <div class="gender-tabs" role="tablist" aria-label="Video gender policies">
@@ -156,7 +159,7 @@
                   </div>
                 </div>
                 <div id="advancedVideoControls" hidden>
-                  <label class="range-field">Video skin mask expansion <output id="videoSkinExpansionValue"></output><input id="videoSkinExpansion" type="range" min="0" max="24" step="1"></label>
+                  <label class="range-field">Video skin mask expansion <output id="videoSkinExpansionValue"></output><input id="videoSkinExpansion" type="range" min="0" max="12" step="0.25"></label>
                   <p class="setting-hint">Expansion applies to hidden skin, face and hair. Shown areas stay open. More expansion covers nearby clothing.</p>
                 </div>
                 <div id="standardVideoControls">
@@ -169,6 +172,14 @@
                 <details class="effect-details video-mode-details"><summary>About advanced video mode</summary><p id="advancedVideoHelp" class="setting-hint">Heavy on performance: adds MediaPipe to the selected person detector on every analyzed video frame. Skin, face and hair share one model pass. No body-part segmentation.</p></details>
               </section>
             </div>
+                <details id="advancedRules" class="effect-details image-advanced">
+                  <summary>Custom rules</summary>
+                  <div class="rules-toolbar"><label class="setting-field">Rules for <select id="rulesGenderSelect"><option value="female">Female</option><option value="male">Male</option></select></label><p id="rulesGender" class="setting-hint" role="status"></p></div>
+                  <p class="setting-hint">Add conditions for when an area should be covered. Images and single-frame GIFs only.</p>
+                  <details class="rule-help"><summary>How custom rules work</summary><p class="setting-hint">Combine areas for one skin percentage, or use separate conditions with AND / OR. Rules add coverage to your usual choices. Black wins at overlaps. Body-area detection turns on when you add a rule.</p></details>
+                  <div id="rulesList"></div>
+                  <div class="rule-add"><button type="button" id="addCustomRule">Add custom rule</button></div>
+                </details>
           </section>
         </section>
         <div class="advanced-body settings-only">
@@ -180,7 +191,7 @@
     <p class="muted">Whole-body gender uses the person crop to estimate appearance. Uncertain estimates stay unclassified.</p>
     <label>Only censor images when <select id="imageDetectionGate"><option value="any">No detection required (current behavior)</option><option value="face">A face is detected</option><option value="person">A YOLO person is detected</option><option value="either">A face or YOLO person is detected</option><option value="both">Both a face and YOLO person are detected</option></select></label>
     <p class="muted">This also controls MediaPipe-only masks. Requiring a detection can leave a person uncovered when a model misses them.</p>
-    <label>Image mask expansion <output id="imageExpansionValue"></output><input id="imageExpansion" type="range" min="0" max="24" step="1" aria-describedby="expansionHelp"></label>
+    <label>Image mask expansion <output id="imageExpansionValue"></output><input id="imageExpansion" type="range" min="0" max="12" step="0.25" aria-describedby="expansionHelp"></label>
   </fieldset>
   <fieldset><legend>Videos</legend>
     <label>Gender model <select id="videoGenderModel"><option value="face">Face (current)</option><option value="body-paddle">Whole body · Paddle</option><option value="body-intel">Whole body · Intel</option><option value="face-paddle">Face, then Paddle if unavailable</option><option value="face-intel">Face, then Intel if unavailable</option></select></label>
@@ -189,10 +200,10 @@
     <label>Playback <select id="videoPlayback"><option value="smooth">Smooth</option><option value="strict">Strict</option></select></label>
     <label>Person detector <select id="videoDetector"><option value="segment">YOLO silhouette</option><option value="fast-box">Fast person boxes</option></select></label>
     <p class="muted">Fast boxes use a 256 × 256 detection model. They run faster but cover rectangular areas around people.</p>
-    <label id="standardVideoExpansionControl">Video mask expansion <output id="videoExpansionValue"></output><input id="videoExpansion" type="range" min="0" max="24" step="1" aria-describedby="expansionHelp"></label>
+    <label id="standardVideoExpansionControl">Video mask expansion <output id="videoExpansionValue"></output><input id="videoExpansion" type="range" min="0" max="12" step="0.25" aria-describedby="expansionHelp"></label>
     <p id="videoCoverageHelp" class="muted">Video covers selected people's full silhouettes, including faces. Fast motion can still outrun a mask.</p>
   </fieldset>
-  <p id="expansionHelp" class="muted">Expansion adds a margin in analysis pixels. Larger values cover more nearby area.</p>
+  <p id="expansionHelp" class="muted">Expansion is a percentage of each person’s longest visible body dimension. Distant people get a smaller margin; changing image resolution does not change its proportion.</p>
   </div></section>
 <section class="settings-panel settings-only" data-settings-panel="performance" hidden><h2>Performance and resolution</h2><div class="tech-body">
   <label>Performance preset <select id="performance"><option value="performance">Performance</option><option value="balanced">Balanced</option><option value="quality">Quality</option></select></label>
@@ -240,7 +251,7 @@
       </main>
       <section class="page-card popup-only" aria-labelledby="pageTitle">
         <div class="site-heading"><div><h2 id="pageTitle">This site</h2><p id="siteHost" dir="ltr">Checking website…</p></div><button id="toggleSite" type="button" disabled>Pause on this site</button></div>
-        <p id="pageStatus" aria-live="polite">Checking this page…</p>
+        <button id="openPdf" type="button">Open PDF reader</button><p id="pageStatus" aria-live="polite">Checking this page…</p>
         <button id="manageSites" type="button" class="text-button" hidden>Manage site exceptions</button>
       </section>
     </div>

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import {personExpansion} from './expansion';
 // Copyright (C) 2026 Sitr contributors
 import { DEFAULT_SETTINGS, ENGINE, type Settings } from '../config/settings';
 import type { Track, TrackObservation } from '../state/contracts';
@@ -25,6 +26,7 @@ export function compose(tracks: Track[], semantic: Uint8Array, width: number, he
   const ownedCounts = tracks.map(() => 0);
   const skinCounts = tracks.map(() => 0);
   const policies = settings.personPolicies ? tracks.map(track => policyFor(settings, track)) : [];
+  const margins=tracks.map(track=>settings.personPolicies?personExpansion(settings.imageExpansion,width,track.box)+2:2);
   const unknown = { label: 'unknown' as const, labelUsable: false };
   const unknownPolicy = settings.personPolicies ? policyFor(settings, unknown) : undefined;
   let unassignedForeground = 0;
@@ -47,7 +49,7 @@ export function compose(tracks: Track[], semantic: Uint8Array, width: number, he
         let nearbyCount = 0;
         let nearbySelected = true;
         for (const [index, track] of tracks.entries()) {
-          const margin = settings.personPolicies ? settings.imageExpansion + 2 : 2;
+          const margin = margins[index];
           if (x < track.box.x * width - margin || x >= (track.box.x + track.box.width) * width + margin ||
             y < track.box.y * height - margin || y >= (track.box.y + track.box.height) * height + margin) continue;
           nearbyCount++;

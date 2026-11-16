@@ -16,6 +16,15 @@ describe('display-frame motion', () => {
     const motion = estimateTranslation(old, next, side, { x: 20 / side, y: 20 / side, width: 50 / side, height: 50 / side });
     expect(motion).toEqual({ dx: 3, dy: 2, reliable: true });
   });
+  it('recovers fast movement beyond the old three-pixel search window',()=>{
+    const side=96,old=new Uint8Array(side*side).fill(25),next=old.slice();
+    for(let y=20;y<70;y++)for(let x=20;x<70;x++){
+      const value=(x*37+y*61+x*y*7)%220+20;
+      old[y*side+x]=value;next[(y-5)*side+x+8]=value;
+    }
+    const result=estimateTranslation(old,next,side,{x:20/side,y:20/side,width:50/side,height:50/side});
+    expect(result.reliable).toBe(true);expect(Math.abs(result.dx-8)).toBeLessThan(.25);expect(Math.abs(result.dy+5)).toBeLessThan(.25);
+  });
   it('recovers a slow pan after subpixel shifts accumulate', () => {
     const side = 96;
     const source = new Uint8Array(side * side).fill(25);
@@ -33,8 +42,9 @@ describe('display-frame motion', () => {
       return frame;
     };
     const box = { x: 14 / side, y: 14 / side, width: 68 / side, height: 68 / side };
-    expect(estimateTranslation(shifted(0), shifted(0.2), side, box).dx).toBe(0);
-    expect(estimateTranslation(shifted(0), shifted(1.2), side, box)).toEqual({ dx: 1, dy: 0, reliable: true });
+    expect(Math.abs(estimateTranslation(shifted(0), shifted(0.2), side, box).dx-.2)).toBeLessThan(.25);
+    const result=estimateTranslation(shifted(0), shifted(1.2), side, box);
+    expect(result.reliable).toBe(true);expect(Math.abs(result.dx-1.2)).toBeLessThan(.25);expect(Math.abs(result.dy)).toBeLessThan(.25);
   });
   it('keeps an anchored mask moving through a long subpixel pan', () => {
     const side = 96;
